@@ -33,6 +33,9 @@ export default defineConfig({
       },
     }),
   ],
+  optimizeDeps: {
+    include: ['dexie'],
+  },
   test: {
     environment: 'jsdom',
     globals: true,
