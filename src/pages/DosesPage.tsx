@@ -205,17 +205,17 @@ function DosesPage() {
       const defaults = await Promise.all([
         addMedication({
           name: 'Tirzepatide',
-          kaPerHour: 1,
-          kePerHour: 1,
+          kaPerHour: 0.12,
+          kePerHour: 0.0058,
           scale: 1,
-          notes: 'Placeholder PK constants. Update in Settings.',
+          notes: 'Approximate PK defaults (t1/2 ≈ 5 days, tmax ≈ 24-36h).',
         }),
         addMedication({
           name: 'Retatrutide',
-          kaPerHour: 1,
-          kePerHour: 1,
+          kaPerHour: 0.1,
+          kePerHour: 0.0048,
           scale: 1,
-          notes: 'Placeholder PK constants. Update in Settings.',
+          notes: 'Approximate PK defaults (t1/2 ≈ 6 days, tmax ≈ 24-36h).',
         }),
       ])
       resolvedMedications = defaults
