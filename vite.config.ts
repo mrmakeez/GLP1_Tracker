@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
@@ -13,11 +14,13 @@ export default defineConfig({
         name: 'GLP-1 Level Tracker',
         short_name: 'GLP-1 Tracker',
         description: 'Offline GLP-1 medication level tracker.',
+        id: '/',
         theme_color: '#111827',
         background_color: '#111827',
         display: 'standalone',
         scope: '/',
         start_url: '/',
+        orientation: 'portrait',
         icons: [
           {
             src: '/icons/icon-192.svg',
@@ -30,6 +33,11 @@ export default defineConfig({
             type: 'image/svg+xml',
           },
         ],
+      },
+      workbox: {
+        cleanupOutdatedCaches: true,
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,webmanifest}'],
+        navigateFallback: '/index.html',
       },
     }),
   ],
