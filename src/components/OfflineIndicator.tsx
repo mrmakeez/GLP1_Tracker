@@ -13,11 +13,16 @@ function OfflineIndicator() {
 
   useEffect(() => {
     if (offlineReady) {
-      setShowOfflineToast(true)
-      const timer = window.setTimeout(() => {
+      const showTimer = window.setTimeout(() => {
+        setShowOfflineToast(true)
+      }, 0)
+      const hideTimer = window.setTimeout(() => {
         setShowOfflineToast(false)
       }, 4000)
-      return () => window.clearTimeout(timer)
+      return () => {
+        window.clearTimeout(showTimer)
+        window.clearTimeout(hideTimer)
+      }
     }
     return undefined
   }, [offlineReady])

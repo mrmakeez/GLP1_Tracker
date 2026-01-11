@@ -141,7 +141,10 @@ function SettingsPage() {
   }
 
   useEffect(() => {
-    void loadData()
+    const timer = window.setTimeout(() => {
+      void loadData()
+    }, 0)
+    return () => window.clearTimeout(timer)
   }, [])
 
   const handleSettingsChange = <T extends keyof SettingsFormState>(

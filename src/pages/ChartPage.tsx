@@ -215,20 +215,26 @@ function ChartPage() {
   }
 
   useEffect(() => {
-    void loadData()
+    const timer = window.setTimeout(() => {
+      void loadData()
+    }, 0)
+    return () => window.clearTimeout(timer)
   }, [])
 
   useEffect(() => {
-    setVisibleMedicationIds((prev) => {
-      const nextIds = medications.map((medication) => medication.id)
-      if (prev.length === 0) {
-        return nextIds
-      }
-      const prevSet = new Set(prev)
-      const merged = nextIds.filter((id) => prevSet.has(id))
-      const additions = nextIds.filter((id) => !prevSet.has(id))
-      return [...merged, ...additions]
-    })
+    const timer = window.setTimeout(() => {
+      setVisibleMedicationIds((prev) => {
+        const nextIds = medications.map((medication) => medication.id)
+        if (prev.length === 0) {
+          return nextIds
+        }
+        const prevSet = new Set(prev)
+        const merged = nextIds.filter((id) => prevSet.has(id))
+        const additions = nextIds.filter((id) => !prevSet.has(id))
+        return [...merged, ...additions]
+      })
+    }, 0)
+    return () => window.clearTimeout(timer)
   }, [medications])
 
   const activeFutureOption = useMemo(() => {
