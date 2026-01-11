@@ -136,14 +136,16 @@ Stability:
 ---
 
 ## Deployment (GitHub Pages)
-If the repo includes a GH Pages workflow:
 1. In GitHub: **Settings → Pages**
 2. Set Source to **GitHub Actions**
-3. Merge to `main` to trigger deploy
+3. Ensure the `main` branch is the default branch
+4. Push or merge to `main` to trigger the deployment workflow
 
 Notes:
-- Vite `base` must match the repo name if hosted at `https://<user>.github.io/<repo>/`.
-- Ensure the workflow outputs to Pages correctly.
+- The deployment workflow sets `VITE_BASE_PATH` to `/<repo>/` so assets resolve at
+  `https://<user>.github.io/<repo>/`.
+- If you set `VITE_BASE_PATH` manually, include the repository path (trailing slash optional).
+- If you rename the repository, update the Pages URL and allow the workflow to re-run.
 
 ---
 
