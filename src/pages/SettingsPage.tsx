@@ -54,6 +54,14 @@ const DEFAULT_MEDICATIONS = [
   },
 ]
 
+const DEFAULT_NEW_MEDICATION = {
+  name: '',
+  kaPerHour: String(DEFAULT_MEDICATIONS[0].kaPerHour),
+  kePerHour: String(DEFAULT_MEDICATIONS[0].kePerHour),
+  scale: String(DEFAULT_MEDICATIONS[0].scale),
+  notes: '',
+}
+
 const TIMEZONE_OPTIONS = [
   'Pacific/Auckland',
   'UTC',
@@ -105,13 +113,7 @@ function SettingsPage() {
   >([])
   const [newMedication, setNewMedication] = useState<
     Omit<MedicationDraft, 'id'>
-  >({
-    name: '',
-    kaPerHour: '1',
-    kePerHour: '1',
-    scale: '1',
-    notes: '',
-  })
+  >(DEFAULT_NEW_MEDICATION)
   const [notice, setNotice] = useState<NoticeState | null>(null)
   const [medicationErrors, setMedicationErrors] = useState<
     Record<string, string>
@@ -257,13 +259,7 @@ function SettingsPage() {
     })
 
     setMedicationDrafts((prev) => [...prev, toMedicationDraft(record)])
-    setNewMedication({
-      name: '',
-      kaPerHour: '1',
-      kePerHour: '1',
-      scale: '1',
-      notes: '',
-    })
+    setNewMedication(DEFAULT_NEW_MEDICATION)
     setNotice({ message: 'Medication profile added.', tone: 'success' })
   }
 
