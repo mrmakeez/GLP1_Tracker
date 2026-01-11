@@ -61,15 +61,91 @@ const formatDateTime = (isoString: string, timezone: string) => {
   }).format(date)
 }
 
-const toLocalInputValue = (isoString: string) => {
+const toLocalInputValue = (isoString: string, timezone: string) => {
   const date = new Date(isoString)
   if (Number.isNaN(date.getTime())) {
     return ''
   }
-  const pad = (value: number) => value.toString().padStart(2, '0')
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
-    date.getDate(),
-  )}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  })
+  const parts = formatter.formatToParts(date)
+  const valueByType = new Map(
+    parts.map((part) => [part.type, part.value]),
+  )
+  const year = valueByType.get('year')
+  const month = valueByType.get('month')
+  const day = valueByType.get('day')
+  const hour = valueByType.get('hour')
+  const minute = valueByType.get('minute')
+  if (!year || !month || !day || !hour || !minute) {
+    return ''
+  }
+  return `${year}-${month}-${day}T${hour}:${minute}`
+}
+
+const getTimezoneOffsetMinutes = (timezone: string, date: Date) => {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  })
+  const parts = formatter.formatToParts(date)
+  const valueByType = new Map(
+    parts.map((part) => [part.type, part.value]),
+  )
+  const year = Number(valueByType.get('year'))
+  const month = Number(valueByType.get('month'))
+  const day = Number(valueByType.get('day'))
+  const hour = Number(valueByType.get('hour'))
+  const minute = Number(valueByType.get('minute'))
+  const second = Number(valueByType.get('second'))
+  const utcTime = Date.UTC(year, month - 1, day, hour, minute, second)
+  return (utcTime - date.getTime()) / 60000
+}
+
+const parseDateTimeInZone = (
+  datetimeLocal: string,
+  timezone: string,
+) => {
+  const [datePart, timePart] = datetimeLocal.split('T')
+  if (!datePart || !timePart) {
+    return null
+  }
+  const [year, month, day] = datePart.split('-').map(Number)
+  const [hour, minute] = timePart.split(':').map(Number)
+  if (
+    [year, month, day, hour, minute].some((value) =>
+      Number.isNaN(value),
+    )
+  ) {
+    return null
+  }
+  const utcGuess = Date.UTC(year, month - 1, day, hour, minute)
+  const initialOffset = getTimezoneOffsetMinutes(
+    timezone,
+    new Date(utcGuess),
+  )
+  let adjusted = utcGuess - initialOffset * 60000
+  const adjustedOffset = getTimezoneOffsetMinutes(
+    timezone,
+    new Date(adjusted),
+  )
+  if (adjustedOffset !== initialOffset) {
+    adjusted = utcGuess - adjustedOffset * 60000
+  }
+  return new Date(adjusted)
 }
 
 function DosesPage() {
@@ -181,16 +257,22 @@ function DosesPage() {
       errors.datetimeLocal = 'Choose a date and time.'
     }
 
-    const parsedDate = new Date(doseForm.datetimeLocal)
+    const parsedDate = parseDateTimeInZone(
+      doseForm.datetimeLocal,
+      timezone,
+    )
     if (
       doseForm.datetimeLocal &&
-      Number.isNaN(parsedDate.getTime())
+      (!parsedDate || Number.isNaN(parsedDate.getTime()))
     ) {
       errors.datetimeLocal = 'Enter a valid date and time.'
     }
 
     setDoseErrors(errors)
     if (Object.keys(errors).length > 0) {
+      return
+    }
+    if (!parsedDate) {
       return
     }
 
@@ -226,10 +308,13 @@ function DosesPage() {
     if (!scheduleForm.startDatetimeLocal) {
       errors.startDatetimeLocal = 'Choose a start date and time.'
     }
-    const parsedDate = new Date(scheduleForm.startDatetimeLocal)
+    const parsedDate = parseDateTimeInZone(
+      scheduleForm.startDatetimeLocal,
+      timezone,
+    )
     if (
       scheduleForm.startDatetimeLocal &&
-      Number.isNaN(parsedDate.getTime())
+      (!parsedDate || Number.isNaN(parsedDate.getTime()))
     ) {
       errors.startDatetimeLocal = 'Enter a valid date and time.'
     }
@@ -251,6 +336,9 @@ function DosesPage() {
 
     setScheduleErrors(errors)
     if (Object.keys(errors).length > 0) {
+      return
+    }
+    if (!parsedDate) {
       return
     }
 
@@ -598,6 +686,7 @@ function DosesPage() {
                                 doseMg: String(row.doseMg),
                                 datetimeLocal: toLocalInputValue(
                                   row.datetimeIso,
+                                  timezone,
                                 ),
                               })
                               setDoseErrors({})
@@ -699,6 +788,7 @@ function DosesPage() {
                                 intervalDays: String(schedule.interval),
                                 startDatetimeLocal: toLocalInputValue(
                                   schedule.startDatetimeIso,
+                                  timezone,
                                 ),
                               })
                               setScheduleErrors({})
