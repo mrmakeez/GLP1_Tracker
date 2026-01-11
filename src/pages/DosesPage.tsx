@@ -1,19 +1,279 @@
-const doseRows = [
-  {
-    id: 'dose-1',
-    medication: 'Tirzepatide',
-    amount: '2.5 mg',
-    datetime: '2025-01-14 09:00',
-  },
-  {
-    id: 'dose-2',
-    medication: 'Retatrutide',
-    amount: '1.5 mg',
-    datetime: '2025-01-07 09:00',
-  },
-]
+import { type FormEvent, useEffect, useMemo, useState } from 'react'
+import {
+  DEFAULT_TIMEZONE,
+  addDose,
+  addMedication,
+  addSchedule,
+  deleteDose,
+  deleteSchedule,
+  getSettings,
+  listDoses,
+  listMedications,
+  listSchedules,
+  updateDose,
+  updateSchedule,
+  type DoseRecord,
+  type MedicationRecord,
+  type ScheduleFrequency,
+  type ScheduleRecord,
+  type SettingsRecord,
+} from '../db'
+
+type DoseFormState = {
+  medicationId: string
+  doseMg: string
+  datetimeLocal: string
+}
+
+type ScheduleFormState = {
+  enabled: boolean
+  medicationId: string
+  doseMg: string
+  frequency: ScheduleFrequency
+  intervalDays: string
+  startDatetimeLocal: string
+}
+
+const defaultDoseForm: DoseFormState = {
+  medicationId: '',
+  doseMg: '',
+  datetimeLocal: '',
+}
+
+const defaultScheduleForm: ScheduleFormState = {
+  enabled: true,
+  medicationId: '',
+  doseMg: '',
+  frequency: 'weekly',
+  intervalDays: '7',
+  startDatetimeLocal: '',
+}
+
+const formatDateTime = (isoString: string, timezone: string) => {
+  const date = new Date(isoString)
+  if (Number.isNaN(date.getTime())) {
+    return isoString
+  }
+  return new Intl.DateTimeFormat('en-NZ', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: timezone,
+  }).format(date)
+}
+
+const toLocalInputValue = (isoString: string) => {
+  const date = new Date(isoString)
+  if (Number.isNaN(date.getTime())) {
+    return ''
+  }
+  const pad = (value: number) => value.toString().padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
+    date.getDate(),
+  )}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
 
 function DosesPage() {
+  const [medications, setMedications] = useState<MedicationRecord[]>([])
+  const [doses, setDoses] = useState<DoseRecord[]>([])
+  const [schedules, setSchedules] = useState<ScheduleRecord[]>([])
+  const [settings, setSettings] = useState<SettingsRecord | null>(null)
+  const [doseForm, setDoseForm] = useState<DoseFormState>(defaultDoseForm)
+  const [scheduleForm, setScheduleForm] =
+    useState<ScheduleFormState>(defaultScheduleForm)
+  const [doseErrors, setDoseErrors] = useState<Record<string, string>>({})
+  const [scheduleErrors, setScheduleErrors] = useState<
+    Record<string, string>
+  >({})
+  const [editingDoseId, setEditingDoseId] = useState<string | null>(null)
+  const [editingScheduleId, setEditingScheduleId] = useState<string | null>(
+    null,
+  )
+
+  const timezone = settings?.defaultTimezone ?? DEFAULT_TIMEZONE
+
+  const medicationById = useMemo(() => {
+    return new Map(medications.map((medication) => [medication.id, medication]))
+  }, [medications])
+
+  const sortedDoses = useMemo(
+    () =>
+      [...doses].sort(
+        (a, b) =>
+          new Date(b.datetimeIso).getTime() -
+          new Date(a.datetimeIso).getTime(),
+      ),
+    [doses],
+  )
+
+  const sortedSchedules = useMemo(
+    () =>
+      [...schedules].sort(
+        (a, b) =>
+          new Date(b.startDatetimeIso).getTime() -
+          new Date(a.startDatetimeIso).getTime(),
+      ),
+    [schedules],
+  )
+
+  const loadData = async () => {
+    const [loadedMedications, loadedDoses, loadedSchedules, loadedSettings] =
+      await Promise.all([
+        listMedications(),
+        listDoses(),
+        listSchedules(),
+        getSettings(),
+      ])
+
+    let resolvedMedications = loadedMedications
+    if (resolvedMedications.length === 0) {
+      const defaults = await Promise.all([
+        addMedication({
+          name: 'Tirzepatide',
+          kaPerHour: 1,
+          kePerHour: 1,
+          scale: 1,
+          notes: 'Placeholder PK constants. Update in Settings.',
+        }),
+        addMedication({
+          name: 'Retatrutide',
+          kaPerHour: 1,
+          kePerHour: 1,
+          scale: 1,
+          notes: 'Placeholder PK constants. Update in Settings.',
+        }),
+      ])
+      resolvedMedications = defaults
+    }
+
+    setMedications(resolvedMedications)
+    setDoses(loadedDoses)
+    setSchedules(loadedSchedules)
+    setSettings(loadedSettings)
+  }
+
+  useEffect(() => {
+    void loadData()
+  }, [])
+
+  const resetDoseForm = () => {
+    setDoseForm(defaultDoseForm)
+    setDoseErrors({})
+    setEditingDoseId(null)
+  }
+
+  const resetScheduleForm = () => {
+    setScheduleForm(defaultScheduleForm)
+    setScheduleErrors({})
+    setEditingScheduleId(null)
+  }
+
+  const handleDoseSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const errors: Record<string, string> = {}
+    if (!doseForm.medicationId) {
+      errors.medicationId = 'Select a medication.'
+    }
+    const doseValue = Number(doseForm.doseMg)
+    if (!doseForm.doseMg || Number.isNaN(doseValue) || doseValue <= 0) {
+      errors.doseMg = 'Dose must be greater than 0.'
+    }
+    if (!doseForm.datetimeLocal) {
+      errors.datetimeLocal = 'Choose a date and time.'
+    }
+
+    const parsedDate = new Date(doseForm.datetimeLocal)
+    if (
+      doseForm.datetimeLocal &&
+      Number.isNaN(parsedDate.getTime())
+    ) {
+      errors.datetimeLocal = 'Enter a valid date and time.'
+    }
+
+    setDoseErrors(errors)
+    if (Object.keys(errors).length > 0) {
+      return
+    }
+
+    const payload = {
+      medicationId: doseForm.medicationId,
+      doseMg: doseValue,
+      datetimeIso: parsedDate.toISOString(),
+      timezone,
+    }
+
+    if (editingDoseId) {
+      await updateDose(editingDoseId, payload)
+    } else {
+      await addDose(payload)
+    }
+
+    resetDoseForm()
+    await loadData()
+  }
+
+  const handleScheduleSubmit = async (
+    event: FormEvent<HTMLFormElement>,
+  ) => {
+    event.preventDefault()
+    const errors: Record<string, string> = {}
+    if (!scheduleForm.medicationId) {
+      errors.medicationId = 'Select a medication.'
+    }
+    const doseValue = Number(scheduleForm.doseMg)
+    if (!scheduleForm.doseMg || Number.isNaN(doseValue) || doseValue <= 0) {
+      errors.doseMg = 'Dose must be greater than 0.'
+    }
+    if (!scheduleForm.startDatetimeLocal) {
+      errors.startDatetimeLocal = 'Choose a start date and time.'
+    }
+    const parsedDate = new Date(scheduleForm.startDatetimeLocal)
+    if (
+      scheduleForm.startDatetimeLocal &&
+      Number.isNaN(parsedDate.getTime())
+    ) {
+      errors.startDatetimeLocal = 'Enter a valid date and time.'
+    }
+
+    const resolvedInterval =
+      scheduleForm.frequency === 'custom'
+        ? Number(scheduleForm.intervalDays)
+        : scheduleForm.frequency === 'daily'
+          ? 1
+          : 7
+    if (
+      scheduleForm.frequency === 'custom' &&
+      (!scheduleForm.intervalDays ||
+        Number.isNaN(resolvedInterval) ||
+        resolvedInterval <= 0)
+    ) {
+      errors.intervalDays = 'Interval must be greater than 0.'
+    }
+
+    setScheduleErrors(errors)
+    if (Object.keys(errors).length > 0) {
+      return
+    }
+
+    const payload = {
+      medicationId: scheduleForm.medicationId,
+      doseMg: doseValue,
+      frequency: scheduleForm.frequency,
+      interval: resolvedInterval,
+      startDatetimeIso: parsedDate.toISOString(),
+      timezone,
+      enabled: scheduleForm.enabled,
+    }
+
+    if (editingScheduleId) {
+      await updateSchedule(editingScheduleId, payload)
+    } else {
+      await addSchedule(payload)
+    }
+
+    resetScheduleForm()
+    await loadData()
+  }
+
   return (
     <section className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -23,42 +283,455 @@ function DosesPage() {
             Log injections quickly and review the latest entries.
           </p>
         </div>
-        <button
-          type="button"
-          className="rounded-full bg-sky-500 px-4 py-2 text-sm font-semibold text-slate-950"
-        >
-          Add Dose
-        </button>
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-slate-800">
-        <table className="w-full text-left text-sm">
-          <thead className="bg-slate-900 text-slate-400">
-            <tr>
-              <th className="px-4 py-3 font-medium">Medication</th>
-              <th className="px-4 py-3 font-medium">Dose</th>
-              <th className="px-4 py-3 font-medium">Date &amp; time</th>
-              <th className="px-4 py-3 font-medium">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {doseRows.map((row) => (
-              <tr key={row.id} className="border-t border-slate-800">
-                <td className="px-4 py-3">{row.medication}</td>
-                <td className="px-4 py-3">{row.amount}</td>
-                <td className="px-4 py-3">{row.datetime}</td>
-                <td className="px-4 py-3 text-slate-400">
-                  <button
-                    type="button"
-                    className="rounded-full border border-slate-700 px-3 py-1 text-xs"
-                  >
-                    Edit
-                  </button>
-                </td>
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <form
+          onSubmit={handleDoseSubmit}
+          className="space-y-4 rounded-xl border border-slate-800 bg-slate-900 px-4 py-4"
+        >
+          <div>
+            <h2 className="text-lg font-semibold text-slate-100">
+              {editingDoseId ? 'Edit dose' : 'Add dose'}
+            </h2>
+            <p className="text-xs text-slate-400">
+              Default timezone: {timezone}
+            </p>
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-slate-300">
+              Medication
+            </label>
+            <select
+              className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"
+              value={doseForm.medicationId}
+              onChange={(event) =>
+                setDoseForm((prev) => ({
+                  ...prev,
+                  medicationId: event.target.value,
+                }))
+              }
+            >
+              <option value="">Select a medication</option>
+              {medications.map((medication) => (
+                <option key={medication.id} value={medication.id}>
+                  {medication.name}
+                </option>
+              ))}
+            </select>
+            {doseErrors.medicationId ? (
+              <p className="text-xs text-rose-400">
+                {doseErrors.medicationId}
+              </p>
+            ) : null}
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-slate-300">
+              Dose strength (mg)
+            </label>
+            <input
+              type="number"
+              step="0.1"
+              min="0"
+              className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"
+              value={doseForm.doseMg}
+              onChange={(event) =>
+                setDoseForm((prev) => ({
+                  ...prev,
+                  doseMg: event.target.value,
+                }))
+              }
+            />
+            {doseErrors.doseMg ? (
+              <p className="text-xs text-rose-400">{doseErrors.doseMg}</p>
+            ) : null}
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-slate-300">
+              Dose date &amp; time
+            </label>
+            <input
+              type="datetime-local"
+              className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"
+              value={doseForm.datetimeLocal}
+              onChange={(event) =>
+                setDoseForm((prev) => ({
+                  ...prev,
+                  datetimeLocal: event.target.value,
+                }))
+              }
+            />
+            {doseErrors.datetimeLocal ? (
+              <p className="text-xs text-rose-400">
+                {doseErrors.datetimeLocal}
+              </p>
+            ) : null}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="submit"
+              className="rounded-full bg-sky-500 px-4 py-2 text-sm font-semibold text-slate-950"
+            >
+              {editingDoseId ? 'Update dose' : 'Save dose'}
+            </button>
+            {editingDoseId ? (
+              <button
+                type="button"
+                className="rounded-full border border-slate-700 px-4 py-2 text-sm text-slate-200"
+                onClick={resetDoseForm}
+              >
+                Cancel
+              </button>
+            ) : null}
+          </div>
+        </form>
+
+        <form
+          onSubmit={handleScheduleSubmit}
+          className="space-y-4 rounded-xl border border-slate-800 bg-slate-900 px-4 py-4"
+        >
+          <div>
+            <h2 className="text-lg font-semibold text-slate-100">
+              {editingScheduleId ? 'Edit schedule' : 'Schedule builder'}
+            </h2>
+            <p className="text-xs text-slate-400">
+              Enable recurring doses for projections.
+            </p>
+          </div>
+          <label className="flex items-center gap-2 text-sm text-slate-200">
+            <input
+              type="checkbox"
+              className="h-4 w-4 rounded border-slate-700 bg-slate-950 text-sky-500"
+              checked={scheduleForm.enabled}
+              onChange={(event) =>
+                setScheduleForm((prev) => ({
+                  ...prev,
+                  enabled: event.target.checked,
+                }))
+              }
+            />
+            Enable schedule
+          </label>
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-slate-300">
+              Medication
+            </label>
+            <select
+              className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"
+              value={scheduleForm.medicationId}
+              onChange={(event) =>
+                setScheduleForm((prev) => ({
+                  ...prev,
+                  medicationId: event.target.value,
+                }))
+              }
+            >
+              <option value="">Select a medication</option>
+              {medications.map((medication) => (
+                <option key={medication.id} value={medication.id}>
+                  {medication.name}
+                </option>
+              ))}
+            </select>
+            {scheduleErrors.medicationId ? (
+              <p className="text-xs text-rose-400">
+                {scheduleErrors.medicationId}
+              </p>
+            ) : null}
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-slate-300">
+              Dose strength (mg)
+            </label>
+            <input
+              type="number"
+              step="0.1"
+              min="0"
+              className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"
+              value={scheduleForm.doseMg}
+              onChange={(event) =>
+                setScheduleForm((prev) => ({
+                  ...prev,
+                  doseMg: event.target.value,
+                }))
+              }
+            />
+            {scheduleErrors.doseMg ? (
+              <p className="text-xs text-rose-400">{scheduleErrors.doseMg}</p>
+            ) : null}
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-slate-300">
+              Frequency
+            </label>
+            <select
+              className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"
+              value={scheduleForm.frequency}
+              onChange={(event) => {
+                const frequency = event.target
+                  .value as ScheduleFrequency
+                setScheduleForm((prev) => ({
+                  ...prev,
+                  frequency,
+                  intervalDays:
+                    frequency === 'daily'
+                      ? '1'
+                      : frequency === 'weekly'
+                        ? '7'
+                        : prev.intervalDays,
+                }))
+              }}
+            >
+              <option value="weekly">Weekly</option>
+              <option value="daily">Daily</option>
+              <option value="custom">Custom interval</option>
+            </select>
+          </div>
+          {scheduleForm.frequency === 'custom' ? (
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-slate-300">
+                Custom interval (days)
+              </label>
+              <input
+                type="number"
+                min="1"
+                className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"
+                value={scheduleForm.intervalDays}
+                onChange={(event) =>
+                  setScheduleForm((prev) => ({
+                    ...prev,
+                    intervalDays: event.target.value,
+                  }))
+                }
+              />
+              {scheduleErrors.intervalDays ? (
+                <p className="text-xs text-rose-400">
+                  {scheduleErrors.intervalDays}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-slate-300">
+              Start date &amp; time
+            </label>
+            <input
+              type="datetime-local"
+              className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"
+              value={scheduleForm.startDatetimeLocal}
+              onChange={(event) =>
+                setScheduleForm((prev) => ({
+                  ...prev,
+                  startDatetimeLocal: event.target.value,
+                }))
+              }
+            />
+            {scheduleErrors.startDatetimeLocal ? (
+              <p className="text-xs text-rose-400">
+                {scheduleErrors.startDatetimeLocal}
+              </p>
+            ) : null}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="submit"
+              className="rounded-full bg-sky-500 px-4 py-2 text-sm font-semibold text-slate-950"
+            >
+              {editingScheduleId ? 'Update schedule' : 'Save schedule'}
+            </button>
+            {editingScheduleId ? (
+              <button
+                type="button"
+                className="rounded-full border border-slate-700 px-4 py-2 text-sm text-slate-200"
+                onClick={resetScheduleForm}
+              >
+                Cancel
+              </button>
+            ) : null}
+          </div>
+        </form>
+      </div>
+
+      <div className="space-y-3">
+        <h2 className="text-lg font-semibold text-slate-100">Dose history</h2>
+        <div className="overflow-hidden rounded-xl border border-slate-800">
+          <table className="w-full text-left text-sm">
+            <thead className="bg-slate-900 text-slate-400">
+              <tr>
+                <th className="px-4 py-3 font-medium">Medication</th>
+                <th className="px-4 py-3 font-medium">Dose</th>
+                <th className="px-4 py-3 font-medium">Date &amp; time</th>
+                <th className="px-4 py-3 font-medium">Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {sortedDoses.length === 0 ? (
+                <tr className="border-t border-slate-800">
+                  <td
+                    colSpan={4}
+                    className="px-4 py-6 text-center text-slate-500"
+                  >
+                    No doses yet. Add your first entry above.
+                  </td>
+                </tr>
+              ) : (
+                sortedDoses.map((row) => {
+                  const medication = medicationById.get(row.medicationId)
+                  return (
+                    <tr key={row.id} className="border-t border-slate-800">
+                      <td className="px-4 py-3">
+                        {medication?.name ?? 'Unknown'}
+                      </td>
+                      <td className="px-4 py-3">{row.doseMg} mg</td>
+                      <td className="px-4 py-3">
+                        {formatDateTime(row.datetimeIso, timezone)}
+                      </td>
+                      <td className="px-4 py-3 text-slate-400">
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            className="rounded-full border border-slate-700 px-3 py-1 text-xs"
+                            onClick={() => {
+                              setEditingDoseId(row.id)
+                              setDoseForm({
+                                medicationId: row.medicationId,
+                                doseMg: String(row.doseMg),
+                                datetimeLocal: toLocalInputValue(
+                                  row.datetimeIso,
+                                ),
+                              })
+                              setDoseErrors({})
+                            }}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded-full border border-rose-500/60 px-3 py-1 text-xs text-rose-300"
+                            onClick={async () => {
+                              if (
+                                !window.confirm(
+                                  'Delete this dose entry?',
+                                )
+                              ) {
+                                return
+                              }
+                              await deleteDose(row.id)
+                              await loadData()
+                            }}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <h2 className="text-lg font-semibold text-slate-100">
+          Schedules
+        </h2>
+        <div className="overflow-hidden rounded-xl border border-slate-800">
+          <table className="w-full text-left text-sm">
+            <thead className="bg-slate-900 text-slate-400">
+              <tr>
+                <th className="px-4 py-3 font-medium">Medication</th>
+                <th className="px-4 py-3 font-medium">Dose</th>
+                <th className="px-4 py-3 font-medium">Frequency</th>
+                <th className="px-4 py-3 font-medium">Start</th>
+                <th className="px-4 py-3 font-medium">Status</th>
+                <th className="px-4 py-3 font-medium">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedSchedules.length === 0 ? (
+                <tr className="border-t border-slate-800">
+                  <td
+                    colSpan={6}
+                    className="px-4 py-6 text-center text-slate-500"
+                  >
+                    No schedules yet. Create one above to project future doses.
+                  </td>
+                </tr>
+              ) : (
+                sortedSchedules.map((schedule) => {
+                  const medication = medicationById.get(schedule.medicationId)
+                  const frequencyLabel =
+                    schedule.frequency === 'custom'
+                      ? `Every ${schedule.interval} days`
+                      : schedule.frequency === 'daily'
+                        ? 'Daily'
+                        : 'Weekly'
+                  return (
+                    <tr
+                      key={schedule.id}
+                      className="border-t border-slate-800"
+                    >
+                      <td className="px-4 py-3">
+                        {medication?.name ?? 'Unknown'}
+                      </td>
+                      <td className="px-4 py-3">{schedule.doseMg} mg</td>
+                      <td className="px-4 py-3">{frequencyLabel}</td>
+                      <td className="px-4 py-3">
+                        {formatDateTime(schedule.startDatetimeIso, timezone)}
+                      </td>
+                      <td className="px-4 py-3">
+                        {schedule.enabled ? 'Enabled' : 'Paused'}
+                      </td>
+                      <td className="px-4 py-3 text-slate-400">
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            className="rounded-full border border-slate-700 px-3 py-1 text-xs"
+                            onClick={() => {
+                              setEditingScheduleId(schedule.id)
+                              setScheduleForm({
+                                enabled: schedule.enabled,
+                                medicationId: schedule.medicationId,
+                                doseMg: String(schedule.doseMg),
+                                frequency: schedule.frequency,
+                                intervalDays: String(schedule.interval),
+                                startDatetimeLocal: toLocalInputValue(
+                                  schedule.startDatetimeIso,
+                                ),
+                              })
+                              setScheduleErrors({})
+                            }}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded-full border border-rose-500/60 px-3 py-1 text-xs text-rose-300"
+                            onClick={async () => {
+                              if (
+                                !window.confirm(
+                                  'Delete this schedule?',
+                                )
+                              ) {
+                                return
+                              }
+                              await deleteSchedule(schedule.id)
+                              await loadData()
+                            }}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </section>
   )
