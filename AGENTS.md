@@ -85,7 +85,7 @@ The app runs fully offline, stores data locally (IndexedDB), and supports export
   - Clamp negative numeric artifacts to 0.
 - Constants:
   - kaPerHour, kePerHour, scale are per-medication and user-editable.
-  - No hardcoded “authoritative” medical constants in v1; ship placeholders and require user configuration.
+  - Provide reasonable science-based approximations for the default medical constants.
 
 ### Settings
 - Default timezone (prepopulate Pacific/Auckland).
