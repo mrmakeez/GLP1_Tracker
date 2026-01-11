@@ -3,6 +3,7 @@ import type {
   DoseRecord,
   ExportPayload,
   MedicationRecord,
+  ScheduleFrequency,
   ScheduleRecord,
   SettingsRecord,
 } from './types'
@@ -228,6 +229,7 @@ export {
   type DoseRecord,
   type ExportPayload,
   type MedicationRecord,
+  type ScheduleFrequency,
   type ScheduleRecord,
   type SettingsRecord,
 }
