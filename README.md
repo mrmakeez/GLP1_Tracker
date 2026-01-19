@@ -163,4 +163,4 @@ Notes:
 ---
 
 ## License
-Choose one (e.g., MIT) and add `LICENSE`.
+MIT
