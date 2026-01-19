@@ -289,7 +289,28 @@ function DosesPage() {
     }
 
     if (editingDoseId) {
-      await updateDose(editingDoseId, payload)
+      const existingDose = doses.find((dose) => dose.id === editingDoseId)
+      if (existingDose?.source === 'scheduled') {
+        const datetimeChanged =
+          existingDose.datetimeIso !== payload.datetimeIso
+        const medicationChanged =
+          existingDose.medicationId !== payload.medicationId
+        const occurrenceKey =
+          datetimeChanged && existingDose.scheduleId
+            ? `${existingDose.scheduleId}_${payload.datetimeIso}`
+            : existingDose.occurrenceKey
+        await updateDose(editingDoseId, {
+          ...payload,
+          source: 'scheduled',
+          status: existingDose.status,
+          scheduleId: medicationChanged
+            ? undefined
+            : existingDose.scheduleId,
+          occurrenceKey: medicationChanged ? undefined : occurrenceKey,
+        })
+      } else {
+        await updateDose(editingDoseId, payload)
+      }
     } else {
       await addDose(payload)
     }
@@ -652,6 +673,7 @@ function DosesPage() {
             <thead className="bg-slate-900 text-slate-400">
               <tr>
                 <th className="px-4 py-3 font-medium">Medication</th>
+                <th className="px-4 py-3 font-medium">Source</th>
                 <th className="px-4 py-3 font-medium">Dose</th>
                 <th className="px-4 py-3 font-medium">Date &amp; time</th>
                 <th className="px-4 py-3 font-medium">Actions</th>
@@ -661,7 +683,7 @@ function DosesPage() {
               {sortedDoses.length === 0 ? (
                 <tr className="border-t border-slate-800">
                   <td
-                    colSpan={4}
+                    colSpan={5}
                     className="px-4 py-6 text-center text-slate-500"
                   >
                     No doses yet. Add your first entry above.
@@ -670,10 +692,45 @@ function DosesPage() {
               ) : (
                 sortedDoses.map((row) => {
                   const medication = medicationById.get(row.medicationId)
+                  const isScheduled = row.source === 'scheduled'
+                  const statusLabel =
+                    row.status === 'confirmed_taken'
+                      ? 'Confirmed'
+                      : row.status === 'skipped'
+                        ? 'Skipped'
+                        : row.status === 'assumed_taken'
+                          ? 'Assumed'
+                          : null
+                  const statusStyles =
+                    row.status === 'confirmed_taken'
+                      ? 'border-emerald-400/40 text-emerald-200'
+                      : row.status === 'skipped'
+                        ? 'border-rose-400/40 text-rose-200'
+                        : 'border-amber-400/40 text-amber-200'
                   return (
                     <tr key={row.id} className="border-t border-slate-800">
                       <td className="px-4 py-3">
                         {medication?.name ?? 'Unknown'}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap items-center gap-2 text-xs">
+                          {isScheduled ? (
+                            <span className="rounded-full border border-sky-400/40 px-2 py-0.5 text-sky-200">
+                              Scheduled
+                            </span>
+                          ) : (
+                            <span className="rounded-full border border-slate-600 px-2 py-0.5 text-slate-300">
+                              Manual
+                            </span>
+                          )}
+                          {isScheduled && statusLabel ? (
+                            <span
+                              className={`rounded-full border px-2 py-0.5 ${statusStyles}`}
+                            >
+                              {statusLabel}
+                            </span>
+                          ) : null}
+                        </div>
                       </td>
                       <td className="px-4 py-3">{row.doseMg} mg</td>
                       <td className="px-4 py-3">
@@ -681,6 +738,34 @@ function DosesPage() {
                       </td>
                       <td className="px-4 py-3 text-slate-400">
                         <div className="flex flex-wrap gap-2">
+                          {isScheduled ? (
+                            <>
+                              <button
+                                type="button"
+                                className="rounded-full border border-emerald-500/60 px-3 py-1 text-xs text-emerald-200"
+                                onClick={async () => {
+                                  await updateDose(row.id, {
+                                    status: 'confirmed_taken',
+                                  })
+                                  await loadData()
+                                }}
+                              >
+                                Confirm
+                              </button>
+                              <button
+                                type="button"
+                                className="rounded-full border border-rose-500/60 px-3 py-1 text-xs text-rose-200"
+                                onClick={async () => {
+                                  await updateDose(row.id, {
+                                    status: 'skipped',
+                                  })
+                                  await loadData()
+                                }}
+                              >
+                                Skip
+                              </button>
+                            </>
+                          ) : null}
                           <button
                             type="button"
                             className="rounded-full border border-slate-700 px-3 py-1 text-xs"
