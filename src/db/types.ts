@@ -9,6 +9,10 @@ export type MedicationRecord = {
   updatedAt: string
 }
 
+export type DoseSource = 'manual' | 'scheduled'
+
+export type ScheduledDoseStatus = 'assumed_taken' | 'confirmed_taken' | 'skipped'
+
 export type DoseRecord = {
   id: string
   medicationId: string
@@ -17,6 +21,10 @@ export type DoseRecord = {
   timezone: string
   createdAt: string
   updatedAt: string
+  source?: DoseSource
+  scheduleId?: string
+  occurrenceKey?: string
+  status?: ScheduledDoseStatus
 }
 
 export type ScheduleFrequency = 'daily' | 'weekly' | 'custom'
@@ -53,5 +61,5 @@ export type ExportPayload = {
   }
 }
 
-export const DB_SCHEMA_VERSION = 1
+export const DB_SCHEMA_VERSION = 2
 export const DEFAULT_TIMEZONE = 'Pacific/Auckland'
