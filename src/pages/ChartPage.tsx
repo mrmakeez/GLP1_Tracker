@@ -1,4 +1,11 @@
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import {
   LineChart,
   Line,
@@ -169,6 +176,8 @@ function ChartPage() {
     [],
   )
   const [nowTime, setNowTime] = useState<number>(() => Date.now())
+  const lastReconciledAtRef = useRef<number>(0)
+  const reconcileInFlightRef = useRef(false)
 
   const timezone = settings?.defaultTimezone ?? DEFAULT_TIMEZONE
   const sampleMinutes = settings?.chartSampleMinutes ?? 60
@@ -177,8 +186,30 @@ function ChartPage() {
     return new Map(medications.map((medication) => [medication.id, medication]))
   }, [medications])
 
+  const reconcileAndRefreshDoses = useCallback(async (targetTime: number) => {
+    if (reconcileInFlightRef.current) {
+      return
+    }
+    if (targetTime <= lastReconciledAtRef.current) {
+      return
+    }
+    reconcileInFlightRef.current = true
+    try {
+      const result = await reconcileScheduledDoses(new Date(targetTime))
+      lastReconciledAtRef.current = targetTime
+      if (result.createdCount > 0) {
+        const refreshedDoses = await listDoses()
+        setDoses(refreshedDoses)
+      }
+    } finally {
+      reconcileInFlightRef.current = false
+    }
+  }, [])
+
   const loadData = async () => {
-    await reconcileScheduledDoses(new Date())
+    const now = Date.now()
+    await reconcileScheduledDoses(new Date(now))
+    lastReconciledAtRef.current = now
     const [loadedMedications, loadedDoses, loadedSchedules, loadedSettings] =
       await Promise.all([
         listMedications(),
@@ -247,6 +278,10 @@ function ChartPage() {
     }, 60 * 1000)
     return () => window.clearInterval(interval)
   }, [])
+
+  useEffect(() => {
+    void reconcileAndRefreshDoses(nowTime)
+  }, [nowTime, reconcileAndRefreshDoses])
 
   const activeFutureOption = useMemo(() => {
     return (
