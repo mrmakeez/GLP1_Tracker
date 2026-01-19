@@ -291,22 +291,12 @@ function DosesPage() {
     if (editingDoseId) {
       const existingDose = doses.find((dose) => dose.id === editingDoseId)
       if (existingDose?.source === 'scheduled') {
-        const datetimeChanged =
-          existingDose.datetimeIso !== payload.datetimeIso
-        const medicationChanged =
-          existingDose.medicationId !== payload.medicationId
-        const occurrenceKey =
-          datetimeChanged && existingDose.scheduleId
-            ? `${existingDose.scheduleId}_${payload.datetimeIso}`
-            : existingDose.occurrenceKey
         await updateDose(editingDoseId, {
           ...payload,
           source: 'scheduled',
           status: existingDose.status,
-          scheduleId: medicationChanged
-            ? undefined
-            : existingDose.scheduleId,
-          occurrenceKey: medicationChanged ? undefined : occurrenceKey,
+          scheduleId: existingDose.scheduleId,
+          occurrenceKey: existingDose.occurrenceKey,
         })
       } else {
         await updateDose(editingDoseId, payload)
