@@ -133,7 +133,6 @@ const buildFutureScheduleDoses = (
   }
 
   const timezone = schedule.timezone || defaultTimezone
-  const intervalMs = intervalDays * DAY_IN_MS
   const nowTime = now.getTime()
   const endTime = end.getTime()
   let nextDate = new Date(start.getTime())
