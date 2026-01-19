@@ -470,8 +470,10 @@ function ChartPage() {
                     formatDateTime(new Date(Number(value)), timezone)
                   }
                   formatter={(value?: number) => {
-                    const amount = typeof value === 'number' ? value : 0
-                    return [amount.toFixed(2), 'mg']
+                    if (value == null || typeof value !== 'number') {
+                      return null
+                    }
+                    return [value.toFixed(2), 'mg']
                   }}
                   contentStyle={{
                     backgroundColor: '#0f172a',
