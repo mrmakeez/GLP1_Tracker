@@ -20,9 +20,17 @@ class Glp1Database extends Dexie {
   constructor() {
     super('glp1-tracker')
 
-    this.version(DB_SCHEMA_VERSION).stores({
+    this.version(2).stores({
       medications: 'id, name, createdAt, updatedAt',
       doses: 'id, medicationId, datetimeIso, occurrenceKey, createdAt, updatedAt',
+      schedules: 'id, medicationId, startDatetimeIso, createdAt, updatedAt',
+      settings: 'id',
+    })
+
+    this.version(DB_SCHEMA_VERSION).stores({
+      medications: 'id, name, createdAt, updatedAt',
+      doses:
+        'id, medicationId, datetimeIso, &occurrenceKey, createdAt, updatedAt',
       schedules: 'id, medicationId, startDatetimeIso, createdAt, updatedAt',
       settings: 'id',
     })

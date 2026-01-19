@@ -18,6 +18,7 @@ import {
   type ScheduleRecord,
   type SettingsRecord,
 } from '../db'
+import { reconcileScheduledDoses } from '../scheduling/reconcileScheduledDoses'
 
 type DoseFormState = {
   medicationId: string
@@ -192,6 +193,7 @@ function DosesPage() {
   )
 
   const loadData = async () => {
+    await reconcileScheduledDoses(new Date())
     const [loadedMedications, loadedDoses, loadedSchedules, loadedSettings] =
       await Promise.all([
         listMedications(),

@@ -21,6 +21,7 @@ import {
   type ScheduleRecord,
   type SettingsRecord,
 } from '../db'
+import { reconcileScheduledDoses } from '../scheduling/reconcileScheduledDoses'
 import {
   totalAmountAtTime,
   type DoseEvent,
@@ -175,6 +176,7 @@ function ChartPage() {
   }, [medications])
 
   const loadData = async () => {
+    await reconcileScheduledDoses(new Date())
     const [loadedMedications, loadedDoses, loadedSchedules, loadedSettings] =
       await Promise.all([
         listMedications(),
