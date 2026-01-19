@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import {
   LineChart,
   Line,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -300,28 +301,43 @@ function ChartPage() {
   }, [doses, schedules, medicationById, range.now, range.end])
 
   const timePoints = useMemo(() => {
-    return buildTimePoints(range.start, range.end, sampleMinutes)
-  }, [range.start, range.end, sampleMinutes])
+    const points = buildTimePoints(range.start, range.end, sampleMinutes)
+    if (points.length === 0) {
+      return points
+    }
+    const nowTime = range.now.getTime()
+    if (points.some((point) => point.getTime() === nowTime)) {
+      return points
+    }
+    const times = points.map((point) => point.getTime())
+    times.push(nowTime)
+    times.sort((a, b) => a - b)
+    return times.map((time) => new Date(time))
+  }, [range.start, range.end, range.now, sampleMinutes])
 
   const chartData = useMemo(() => {
     if (timePoints.length === 0) {
       return []
     }
 
+    const nowTime = range.now.getTime()
     return timePoints.map((t) => {
-      const point: Record<string, number> = { time: t.getTime() }
+      const point: Record<string, number | null> = { time: t.getTime() }
       let total = 0
+      const isPast = t.getTime() <= nowTime
       for (const medication of medications) {
         const dosesForMedication =
           doseEventsByMedication.get(medication.id) ?? []
         const amount = totalAmountAtTime(dosesForMedication, t)
-        point[medication.id] = amount
+        point[`${medication.id}_past`] = isPast ? amount : null
+        point[`${medication.id}_future`] = isPast ? null : amount
         total += amount
       }
-      point.total = total
+      point.total_past = isPast ? total : null
+      point.total_future = isPast ? null : total
       return point
     })
-  }, [timePoints, medications, doseEventsByMedication])
+  }, [timePoints, medications, doseEventsByMedication, range.now])
 
   const visibleMedications = medications.filter((medication) =>
     visibleMedicationIds.includes(medication.id),
@@ -463,27 +479,61 @@ function ChartPage() {
                   }}
                 />
                 <Legend />
+                <ReferenceLine
+                  x={range.now.getTime()}
+                  stroke="#94a3b8"
+                  strokeDasharray="4 4"
+                  label={{
+                    value: 'Now',
+                    position: 'insideTopRight',
+                    fill: '#94a3b8',
+                  }}
+                />
                 {showTotal ? (
-                  <Line
-                    type="monotone"
-                    dataKey="total"
-                    name="Total"
-                    stroke="#e2e8f0"
-                    strokeWidth={2.5}
-                    dot={false}
-                  />
+                  <>
+                    <Line
+                      type="monotone"
+                      dataKey="total_past"
+                      name="Total"
+                      stroke="#e2e8f0"
+                      strokeWidth={2.5}
+                      dot={false}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="total_future"
+                      stroke="#e2e8f0"
+                      strokeWidth={2.5}
+                      strokeDasharray="6 6"
+                      dot={false}
+                      legendType="none"
+                    />
+                  </>
                 ) : null}
-                {visibleMedications.map((medication, index) => (
-                  <Line
-                    key={medication.id}
-                    type="monotone"
-                    dataKey={medication.id}
-                    name={medication.name}
-                    stroke={COLORS[index % COLORS.length]}
-                    strokeWidth={2}
-                    dot={false}
-                  />
-                ))}
+                {visibleMedications.map((medication, index) => {
+                  const color = COLORS[index % COLORS.length]
+                  return (
+                    <Fragment key={medication.id}>
+                      <Line
+                        type="monotone"
+                        dataKey={`${medication.id}_past`}
+                        name={medication.name}
+                        stroke={color}
+                        strokeWidth={2}
+                        dot={false}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey={`${medication.id}_future`}
+                        stroke={color}
+                        strokeWidth={2}
+                        strokeDasharray="6 6"
+                        dot={false}
+                        legendType="none"
+                      />
+                    </Fragment>
+                  )
+                })}
               </LineChart>
             </ResponsiveContainer>
           )}
