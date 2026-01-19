@@ -154,6 +154,40 @@ const buildFutureScheduleDoses = (
   return events
 }
 
+const getNextScheduledOccurrenceTime = (
+  schedules: ScheduleRecord[],
+  nowTime: number,
+): number | null => {
+  let nextTime: number | null = null
+  for (const schedule of schedules) {
+    if (!schedule.enabled) {
+      continue
+    }
+    const startTime = new Date(schedule.startDatetimeIso).getTime()
+    if (Number.isNaN(startTime)) {
+      continue
+    }
+    const intervalDays = schedule.interval
+    if (!intervalDays || intervalDays <= 0) {
+      continue
+    }
+    const intervalMs = intervalDays * DAY_IN_MS
+    let candidate = startTime
+    if (candidate < nowTime) {
+      const diff = nowTime - candidate
+      const steps = Math.floor(diff / intervalMs)
+      candidate += steps * intervalMs
+      if (candidate < nowTime) {
+        candidate += intervalMs
+      }
+    }
+    if (nextTime === null || candidate < nextTime) {
+      nextTime = candidate
+    }
+  }
+  return nextTime
+}
+
 const resolveFutureOption = (settings: SettingsRecord | null) => {
   if (!settings) {
     return FUTURE_OPTIONS[1]
@@ -279,9 +313,18 @@ function ChartPage() {
     return () => window.clearInterval(interval)
   }, [])
 
+  const nextScheduledOccurrenceTime = useMemo(() => {
+    return getNextScheduledOccurrenceTime(schedules, nowTime)
+  }, [schedules, nowTime])
+
   useEffect(() => {
-    void reconcileAndRefreshDoses(nowTime)
-  }, [nowTime, reconcileAndRefreshDoses])
+    if (
+      nextScheduledOccurrenceTime !== null &&
+      nowTime >= nextScheduledOccurrenceTime
+    ) {
+      void reconcileAndRefreshDoses(nowTime)
+    }
+  }, [nowTime, nextScheduledOccurrenceTime, reconcileAndRefreshDoses])
 
   const activeFutureOption = useMemo(() => {
     return (
