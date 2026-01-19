@@ -115,6 +115,7 @@ const buildFutureScheduleDoses = (
   medication: MedicationProfile,
   now: Date,
   end: Date,
+  defaultTimezone: string,
 ) => {
   if (!schedule.enabled) {
     return []
@@ -128,28 +129,43 @@ const buildFutureScheduleDoses = (
     return []
   }
 
+  const timezone = schedule.timezone || defaultTimezone
   const intervalMs = intervalDays * DAY_IN_MS
   const nowTime = now.getTime()
   const endTime = end.getTime()
-  let nextTime = start.getTime()
+  let nextDate = new Date(start.getTime())
 
-  if (nextTime < nowTime) {
-    const diff = nowTime - nextTime
+  if (nextDate.getTime() < nowTime) {
+    const diff = nowTime - nextDate.getTime()
     const steps = Math.floor(diff / intervalMs)
-    nextTime += steps * intervalMs
-    if (nextTime < nowTime) {
-      nextTime += intervalMs
+    const stepDays = steps * intervalDays
+    const stepped = addDaysInTimezone(nextDate, stepDays, timezone)
+    if (!stepped) {
+      return []
     }
+    nextDate = stepped
+  }
+
+  while (nextDate.getTime() < nowTime) {
+    const advanced = addDaysInTimezone(nextDate, intervalDays, timezone)
+    if (!advanced || advanced.getTime() <= nextDate.getTime()) {
+      break
+    }
+    nextDate = advanced
   }
 
   const events: DoseEvent[] = []
-  while (nextTime <= endTime) {
+  while (nextDate.getTime() <= endTime) {
     events.push({
-      datetime: new Date(nextTime),
+      datetime: new Date(nextDate.getTime()),
       doseMg: schedule.doseMg,
       medication,
     })
-    nextTime += intervalMs
+    const nextOccurrence = addDaysInTimezone(nextDate, intervalDays, timezone)
+    if (!nextOccurrence || nextOccurrence.getTime() <= nextDate.getTime()) {
+      break
+    }
+    nextDate = nextOccurrence
   }
 
   return events
@@ -391,6 +407,7 @@ function ChartPage() {
         },
         range.now,
         range.end,
+        timezone,
       )
       if (futureDoses.length === 0) {
         continue
