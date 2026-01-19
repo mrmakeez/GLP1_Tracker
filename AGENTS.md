@@ -5,12 +5,14 @@ Build a privacy-first Progressive Web App that estimates GLP-1 medication levels
 
 The app runs fully offline, stores data locally (IndexedDB), and supports export/import of the local database.
 
+---
+
 ## Goals
 - Fast, offline-capable logging of doses (medication, dose amount, timestamp).
-- Optional scheduling of future doses (e.g., 2 mg every week) for forward extrapolation.
+- Optional scheduling of recurring doses (e.g., 2 mg every week) for forward extrapolation.
 - Clear chart of estimated medication levels over time:
-  - historical levels from logged doses
-  - extrapolated future levels from schedules
+  - historical levels from logged (actual + materialised scheduled) doses
+  - extrapolated future levels from active schedules
 - Local-only data storage with export/import for backups and device migration.
 - Configurable medication PK parameters (ka, ke, scale) to support additional medications later.
 
@@ -25,10 +27,13 @@ The app runs fully offline, stores data locally (IndexedDB), and supports export
 
 ## Key User Stories
 1. As a user, I can log a dose (medication, mg, date/time) in under 15 seconds.
-2. As a user, I can define a weekly schedule and see projected future levels.
-3. As a user, I can view the chart for the last 7/30/90 days or last year, plus a chosen future horizon.
-4. As a user, I can export my data to a JSON file and import it later.
-5. As a user, I can edit PK constants per medication (ka, ke, scale) and immediately see chart changes.
+2. As a user, I can define a recurring schedule and see projected future levels.
+3. As a user, schedule occurrences that have passed appear in Dose History (clearly labelled).
+4. As a user, I can view the chart for the last 7/30/90 days or last year, plus a chosen future horizon.
+5. As a user, I can export my data to a JSON file and import it later.
+6. As a user, I can edit PK constants per medication (ka, ke, scale) and immediately see chart changes.
+
+---
 
 ## Functional Requirements
 
@@ -44,21 +49,33 @@ The app runs fully offline, stores data locally (IndexedDB), and supports export
   - Dose mg > 0
   - datetime must be valid
 
-### Scheduling Future Doses
+### Scheduling Recurring Doses (Rules)
 - User can define schedules per medication:
   - start date & time
   - dose mg
   - frequency: daily, weekly, or custom interval (days)
   - enabled toggle
-- The system generates “virtual future doses” only within the requested chart horizon (no infinite pre-generation).
+- Schedules are *rules*; they do not store every occurrence.
+
+### Materialising Past Schedule Occurrences into Dose History
+- On app/page load (no background jobs), the system reconciles enabled schedules:
+  - For each schedule, generate occurrences from startDatetime up to “now”.
+  - For each occurrence at/before now, create a dose entry if it does not already exist.
+- Scheduled dose records must be deduped deterministically using:
+  - occurrenceKey = `${scheduleId}_${datetimeIso}`
+- Scheduled dose records should be clearly labelled in Dose History.
+- Status tracking for scheduled doses:
+  - default status when materialised: assumed_taken
+  - user may set: confirmed_taken or skipped
 
 ### Local Storage + Export/Import
 - Storage: IndexedDB (Dexie) with a schema version.
 - Export: single JSON file containing all tables and metadata (schemaVersion, exportedAt).
 - Import:
-  - Validate schemaVersion and required tables.
-  - Provide “Replace all data” mode (v1).
+  - Validate required tables.
+  - Provide “Replace all data” mode (v1+).
   - Show success/error messages.
+  - (Optional future improvement) Provide migration path from older schema versions.
 
 ### Output Chart
 - Displays estimated medication levels (mg in system) over time.
@@ -68,9 +85,13 @@ The app runs fully offline, stores data locally (IndexedDB), and supports export
   - Display range = [now - lookback, now + futureHorizon].
 - Sampling resolution:
   - default 60 minutes (configurable in Settings).
-- Chart should be readable on mobile; tooltip shows timestamp + value.
+- Past vs future styling:
+  - Historical segment (t <= now): solid line
+  - Future segment (t > now): dashed line
+  - Include a visible “Now” marker on the chart
 - Multi-medication behavior:
   - Prefer separate lines per medication + optional total line, with toggles.
+- Tooltip shows timestamp + value; chart must be readable on mobile.
 
 ### PK / Bateman Model
 - Compute estimated amount (mg) using extravascular Bateman function with first-order absorption and elimination.
@@ -85,7 +106,7 @@ The app runs fully offline, stores data locally (IndexedDB), and supports export
   - Clamp negative numeric artifacts to 0.
 - Constants:
   - kaPerHour, kePerHour, scale are per-medication and user-editable.
-  - Provide reasonable science-based approximations for the default medical constants.
+  - Provide reasonable approximations for default constants.
 
 ### Settings
 - Default timezone (prepopulate Pacific/Auckland).
@@ -102,22 +123,39 @@ The app runs fully offline, stores data locally (IndexedDB), and supports export
   - Data stays in IndexedDB
 - Provide a small “offline ready” indicator when the service worker is active.
 
+---
+
 ## UX / IA
 - Navigation tabs: Doses, Chart, Settings, Data.
 - Mobile-first layout; minimal taps to add a dose.
-- Clear empty states (no doses yet, no schedules yet).
+- Dose History must visually distinguish:
+  - manual doses
+  - scheduled (materialised) doses + status
 
-## Data Model (v1)
+---
+
+## Data Model (v2)
 Tables:
 - medications: id, name, kaPerHour, kePerHour, scale, notes, createdAt, updatedAt
-- doses: id, medicationId, doseMg, datetimeIso, timezone, createdAt, updatedAt
+- doses:
+  - id, medicationId, doseMg, datetimeIso, timezone, createdAt, updatedAt
+  - source: 'manual' | 'scheduled'
+  - scheduleId?: string
+  - occurrenceKey?: string
+  - status?: 'assumed_taken' | 'confirmed_taken' | 'skipped'
 - schedules: id, medicationId, startDatetimeIso, timezone, doseMg, frequency, interval, enabled, createdAt, updatedAt
 - settings: singleton record with defaultTimezone, chartSampleMinutes, defaultLookbackDays, defaultFutureDays
 
+---
+
 ## Acceptance Criteria
 - User can add/edit/delete doses and they persist after refresh.
-- User can create a weekly schedule and the chart shows future extrapolation.
+- User can create a recurring schedule and:
+  - future extrapolation appears on the chart
+  - past occurrences are materialised into Dose History after they pass
+- Materialisation is idempotent: refreshing does not create duplicates.
 - Chart range controls correctly adjust historical + future span.
+- Past chart segment is solid; future segment is dashed; “Now” marker is visible.
 - Export produces valid JSON; import restores identical chart output.
 - PK engine passes unit tests and handles ka≈ke without NaNs.
 - PWA is installable and usable offline after first load.
