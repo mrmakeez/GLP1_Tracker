@@ -35,6 +35,7 @@ import {
   type DoseEvent,
   type MedicationProfile,
 } from '../pk/bateman'
+import { addDaysInTimezone } from '../scheduling/timezone'
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000
 
@@ -157,6 +158,7 @@ const buildFutureScheduleDoses = (
 const getNextScheduledOccurrenceTime = (
   schedules: ScheduleRecord[],
   nowTime: number,
+  defaultTimezone: string,
 ): number | null => {
   let nextTime: number | null = null
   for (const schedule of schedules) {
@@ -171,18 +173,33 @@ const getNextScheduledOccurrenceTime = (
     if (!intervalDays || intervalDays <= 0) {
       continue
     }
-    const intervalMs = intervalDays * DAY_IN_MS
-    let candidate = startTime
-    if (candidate < nowTime) {
-      const diff = nowTime - candidate
+    const timezone = schedule.timezone || defaultTimezone
+    let candidateDate = new Date(startTime)
+    if (startTime < nowTime) {
+      const intervalMs = intervalDays * DAY_IN_MS
+      const diff = nowTime - startTime
       const steps = Math.floor(diff / intervalMs)
-      candidate += steps * intervalMs
-      if (candidate < nowTime) {
-        candidate += intervalMs
+      const stepDays = steps * intervalDays
+      const stepped = addDaysInTimezone(candidateDate, stepDays, timezone)
+      if (!stepped) {
+        continue
       }
+      candidateDate = stepped
     }
-    if (nextTime === null || candidate < nextTime) {
-      nextTime = candidate
+    while (candidateDate.getTime() <= nowTime) {
+      const next = addDaysInTimezone(candidateDate, intervalDays, timezone)
+      if (!next) {
+        candidateDate = new Date(Number.NaN)
+        break
+      }
+      candidateDate = next
+    }
+    const candidateTime = candidateDate.getTime()
+    if (Number.isNaN(candidateTime)) {
+      continue
+    }
+    if (nextTime === null || candidateTime < nextTime) {
+      nextTime = candidateTime
     }
   }
   return nextTime
@@ -314,8 +331,8 @@ function ChartPage() {
   }, [])
 
   const nextScheduledOccurrenceTime = useMemo(() => {
-    return getNextScheduledOccurrenceTime(schedules, nowTime)
-  }, [schedules, nowTime])
+    return getNextScheduledOccurrenceTime(schedules, nowTime, timezone)
+  }, [schedules, nowTime, timezone])
 
   useEffect(() => {
     if (
