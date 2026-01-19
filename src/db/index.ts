@@ -1,10 +1,12 @@
 import Dexie, { type Table } from 'dexie'
 import type {
   DoseRecord,
+  DoseSource,
   ExportPayload,
   MedicationRecord,
   ScheduleFrequency,
   ScheduleRecord,
+  ScheduledDoseStatus,
   SettingsRecord,
 } from './types'
 import { DB_SCHEMA_VERSION, DEFAULT_TIMEZONE } from './types'
@@ -20,7 +22,7 @@ class Glp1Database extends Dexie {
 
     this.version(DB_SCHEMA_VERSION).stores({
       medications: 'id, name, createdAt, updatedAt',
-      doses: 'id, medicationId, datetimeIso, createdAt, updatedAt',
+      doses: 'id, medicationId, datetimeIso, occurrenceKey, createdAt, updatedAt',
       schedules: 'id, medicationId, startDatetimeIso, createdAt, updatedAt',
       settings: 'id',
     })
@@ -72,8 +74,13 @@ export const addDose = async (
   input: Omit<DoseRecord, 'id' | 'createdAt' | 'updatedAt'>,
 ) => {
   const timestamp = nowIso()
+  const source: DoseSource = input.source ?? 'manual'
+  const status: ScheduledDoseStatus | undefined =
+    source === 'scheduled' ? input.status : undefined
   const record: DoseRecord = {
     ...input,
+    source,
+    status,
     id: generateId(),
     createdAt: timestamp,
     updatedAt: timestamp,
@@ -91,6 +98,9 @@ export const updateDose = async (
 }
 
 export const deleteDose = (id: string) => db.doses.delete(id)
+
+export const getDoseByOccurrenceKey = (occurrenceKey: string) =>
+  db.doses.where('occurrenceKey').equals(occurrenceKey).first()
 
 export const listSchedules = () => db.schedules.toArray()
 
@@ -226,10 +236,12 @@ export const importDatabaseReplaceAll = async (
 export {
   DB_SCHEMA_VERSION,
   DEFAULT_TIMEZONE,
+  type DoseSource,
   type DoseRecord,
   type ExportPayload,
   type MedicationRecord,
   type ScheduleFrequency,
   type ScheduleRecord,
+  type ScheduledDoseStatus,
   type SettingsRecord,
 }
