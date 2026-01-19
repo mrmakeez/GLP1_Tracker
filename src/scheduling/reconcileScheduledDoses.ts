@@ -1,3 +1,4 @@
+import Dexie from 'dexie'
 import {
   db,
   generateId,
@@ -79,8 +80,17 @@ export async function reconcileScheduledDoses(
     }
 
     if (dosesToCreate.length > 0) {
-      await db.doses.bulkAdd(dosesToCreate)
-      createdCount = dosesToCreate.length
+      try {
+        await db.doses.bulkAdd(dosesToCreate)
+        createdCount = dosesToCreate.length
+      } catch (error) {
+        if (error instanceof Dexie.BulkError) {
+          createdCount =
+            dosesToCreate.length - error.failures.length
+        } else {
+          throw error
+        }
+      }
     }
   })
 
