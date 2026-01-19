@@ -433,7 +433,7 @@ function ChartPage() {
     }
 
     return map
-  }, [doses, schedules, medicationById, range.now, range.end])
+  }, [doses, schedules, medicationById, range.now, range.end, timezone])
 
   const timePoints = useMemo(() => {
     const points = buildTimePoints(range.start, range.end, sampleMinutes)
