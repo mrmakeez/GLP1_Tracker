@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { addDaysInTimezone } from './timezone'
+import { addDaysInTimezone, getLocalDayIndex } from './timezone'
 
 const getPartsInZone = (date: Date, timezone: string) => {
   const formatter = new Intl.DateTimeFormat('en-US', {
@@ -42,6 +42,10 @@ describe('addDaysInTimezone', () => {
       expect(baseParts.minute).toBe(nextParts.minute)
       const diffHours = (next.getTime() - base.getTime()) / (60 * 60 * 1000)
       expect(diffHours).toBeCloseTo(23, 5)
+      const baseDay = getLocalDayIndex(base, timezone)
+      const nextDay = getLocalDayIndex(next, timezone)
+      expect(baseDay).not.toBeNull()
+      expect(nextDay).toBe(baseDay! + 1)
     } finally {
       vi.useRealTimers()
     }

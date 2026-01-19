@@ -35,7 +35,10 @@ import {
   type DoseEvent,
   type MedicationProfile,
 } from '../pk/bateman'
-import { addDaysInTimezone } from '../scheduling/timezone'
+import {
+  addDaysInTimezone,
+  getLocalDayIndex,
+} from '../scheduling/timezone'
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000
 
@@ -136,14 +139,21 @@ const buildFutureScheduleDoses = (
   let nextDate = new Date(start.getTime())
 
   if (nextDate.getTime() < nowTime) {
-    const diff = nowTime - nextDate.getTime()
-    const steps = Math.floor(diff / intervalMs)
-    const stepDays = steps * intervalDays
-    const stepped = addDaysInTimezone(nextDate, stepDays, timezone)
-    if (!stepped) {
+    const startDay = getLocalDayIndex(nextDate, timezone)
+    const nowDay = getLocalDayIndex(new Date(nowTime), timezone)
+    if (startDay == null || nowDay == null) {
       return []
     }
-    nextDate = stepped
+    const diffDays = nowDay - startDay
+    const steps = Math.floor(diffDays / intervalDays)
+    const stepDays = steps * intervalDays
+    if (stepDays > 0) {
+      const stepped = addDaysInTimezone(nextDate, stepDays, timezone)
+      if (!stepped) {
+        return []
+      }
+      nextDate = stepped
+    }
   }
 
   while (nextDate.getTime() < nowTime) {
@@ -192,15 +202,21 @@ const getNextScheduledOccurrenceTime = (
     const timezone = schedule.timezone || defaultTimezone
     let candidateDate = new Date(startTime)
     if (startTime < nowTime) {
-      const intervalMs = intervalDays * DAY_IN_MS
-      const diff = nowTime - startTime
-      const steps = Math.floor(diff / intervalMs)
-      const stepDays = steps * intervalDays
-      const stepped = addDaysInTimezone(candidateDate, stepDays, timezone)
-      if (!stepped) {
+      const startDay = getLocalDayIndex(candidateDate, timezone)
+      const nowDay = getLocalDayIndex(new Date(nowTime), timezone)
+      if (startDay == null || nowDay == null) {
         continue
       }
-      candidateDate = stepped
+      const diffDays = nowDay - startDay
+      const steps = Math.floor(diffDays / intervalDays)
+      const stepDays = steps * intervalDays
+      if (stepDays > 0) {
+        const stepped = addDaysInTimezone(candidateDate, stepDays, timezone)
+        if (!stepped) {
+          continue
+        }
+        candidateDate = stepped
+      }
     }
     while (candidateDate.getTime() <= nowTime) {
       const next = addDaysInTimezone(candidateDate, intervalDays, timezone)

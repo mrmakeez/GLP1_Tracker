@@ -7,6 +7,8 @@ type DateParts = {
   second: number
 }
 
+const DAY_IN_MS = 24 * 60 * 60 * 1000
+
 const getDatePartsInZone = (
   date: Date,
   timezone: string,
@@ -51,6 +53,19 @@ const getTimezoneOffsetMinutes = (timezone: string, date: Date) => {
     parts.second,
   )
   return (utcTime - date.getTime()) / 60000
+}
+
+export const getLocalDayIndex = (
+  date: Date,
+  timezone: string,
+): number | null => {
+  const parts = getDatePartsInZone(date, timezone)
+  if (!parts) {
+    return null
+  }
+  return Math.floor(
+    Date.UTC(parts.year, parts.month - 1, parts.day) / DAY_IN_MS,
+  )
 }
 
 export const addDaysInTimezone = (
