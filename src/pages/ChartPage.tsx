@@ -168,6 +168,7 @@ function ChartPage() {
   const [visibleMedicationIds, setVisibleMedicationIds] = useState<string[]>(
     [],
   )
+  const [nowTime, setNowTime] = useState<number>(() => Date.now())
 
   const timezone = settings?.defaultTimezone ?? DEFAULT_TIMEZONE
   const sampleMinutes = settings?.chartSampleMinutes ?? 60
@@ -240,6 +241,13 @@ function ChartPage() {
     return () => window.clearTimeout(timer)
   }, [medications])
 
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      setNowTime(Date.now())
+    }, 60 * 1000)
+    return () => window.clearInterval(interval)
+  }, [])
+
   const activeFutureOption = useMemo(() => {
     return (
       FUTURE_OPTIONS.find((option) => option.value === futureOption) ??
@@ -248,13 +256,13 @@ function ChartPage() {
   }, [futureOption])
 
   const range = useMemo(() => {
-    const now = new Date()
+    const now = new Date(nowTime)
     const start = addDays(now, -lookbackDays)
     const end = activeFutureOption.months
       ? addMonths(now, activeFutureOption.months)
       : addDays(now, activeFutureOption.days ?? 0)
     return { now, start, end }
-  }, [lookbackDays, activeFutureOption])
+  }, [lookbackDays, activeFutureOption, nowTime])
 
   const doseEventsByMedication = useMemo(() => {
     const map = new Map<string, DoseEvent[]>()
