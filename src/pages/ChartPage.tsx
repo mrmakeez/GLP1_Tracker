@@ -375,10 +375,10 @@ function ChartPage() {
       return
     }
     const timeout = window.setTimeout(() => {
-      void reconcileAndRefreshDoses(nowTime, { forceRefresh: true })
+      void reconcileAndRefreshDoses(Date.now(), { forceRefresh: true })
     }, 300)
     return () => window.clearTimeout(timeout)
-  }, [schedules, nowTime, reconcileAndRefreshDoses])
+  }, [schedules, reconcileAndRefreshDoses])
 
   useEffect(() => {
     const nextScheduledOccurrenceTime = getNextScheduledOccurrenceTime(
