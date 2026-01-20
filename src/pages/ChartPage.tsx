@@ -268,7 +268,8 @@ function ChartPage() {
     return new Map(medications.map((medication) => [medication.id, medication]))
   }, [medications])
 
-  const reconcileAndRefreshDoses = useCallback(async (targetTime: number) => {
+  const reconcileAndRefreshDoses = useCallback(
+    async (targetTime: number, options?: { forceRefresh?: boolean }) => {
     if (reconcileInFlightRef.current) {
       return
     }
@@ -279,7 +280,7 @@ function ChartPage() {
     try {
       const result = await reconcileScheduledDoses(new Date(targetTime))
       lastReconciledAtRef.current = targetTime
-      if (result.createdCount > 0) {
+      if (result.createdCount > 0 || options?.forceRefresh) {
         const refreshedDoses = await listDoses()
         setDoses(refreshedDoses)
       }
@@ -365,7 +366,10 @@ function ChartPage() {
     if (schedules.length === 0) {
       return
     }
-    void reconcileAndRefreshDoses(Date.now())
+    const timeout = window.setTimeout(() => {
+      void reconcileAndRefreshDoses(Date.now(), { forceRefresh: true })
+    }, 300)
+    return () => window.clearTimeout(timeout)
   }, [schedules, reconcileAndRefreshDoses])
 
   useEffect(() => {
