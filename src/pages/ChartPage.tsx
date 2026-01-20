@@ -570,6 +570,9 @@ function ChartPage() {
   const doseEventsByMedication = useMemo(() => {
     const map = new Map<string, DoseEvent[]>()
     for (const dose of doses) {
+      if (dose.source === 'scheduled' && dose.status === 'skipped') {
+        continue
+      }
       const medication = medicationById.get(dose.medicationId)
       if (!medication) {
         continue
