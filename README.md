@@ -7,6 +7,18 @@ Runs offline, stores data locally (IndexedDB), and supports export/import for ba
 
 ---
 
+## Status
+
+This project is under active development and currently **pre-release** (`v0.0.0`). Expect occasional breaking changes (including IndexedDB schema bumps); use **Export** for backups when upgrading between versions.
+
+Current scope:
+- Offline-first dose logging
+- Recurring schedules (materialised past occurrences + projected future occurrences)
+- Charting + configurable PK parameters
+- Local JSON export/import (replace-all)
+
+---
+
 ## Features
 
 ### Dose logging
@@ -18,6 +30,8 @@ Runs offline, stores data locally (IndexedDB), and supports export/import for ba
 
 ### Scheduling (optional)
 - Future-dose schedules (e.g., weekly, daily, custom interval)
+- Past occurrences are materialised into Dose History as scheduled doses (deduped per schedule + timestamp)
+- Scheduled doses support status tracking (assumed/confirmed/skipped); skipped scheduled doses are excluded from chart estimates
 - Schedules generate “virtual” future doses only within the chart horizon
 
 ### Charting
@@ -41,7 +55,7 @@ Runs offline, stores data locally (IndexedDB), and supports export/import for ba
 - Vite + React + TypeScript
 - Tailwind CSS
 - IndexedDB via Dexie
-- Charting: Recharts (or Chart.js)
+- Charting: Recharts
 - Tests: Vitest + React Testing Library
 - Lint/format: ESLint + Prettier
 
@@ -116,7 +130,7 @@ Stability:
 
 ### Local database
 - IndexedDB via Dexie
-- Versioned schema
+- Versioned schema (currently v3)
 
 ### Export
 - Produces JSON: `{ schemaVersion, exportedAt, data: { ...tables } }`
