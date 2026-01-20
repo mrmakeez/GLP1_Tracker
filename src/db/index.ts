@@ -226,6 +226,9 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const isString = (value: unknown): value is string =>
   typeof value === 'string'
 
+const isNonEmptyString = (value: unknown): value is string =>
+  isString(value) && value.trim().length > 0
+
 const isNumber = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value)
 
@@ -287,7 +290,8 @@ const validateDose = (value: unknown): value is DoseRecord =>
   (value.occurrenceKey == null || isString(value.occurrenceKey)) &&
   (value.status == null || isScheduledStatus(value.status)) &&
   (value.source !== 'scheduled' ||
-    (isString(value.scheduleId) && isString(value.occurrenceKey)))
+    (isNonEmptyString(value.scheduleId) &&
+      isNonEmptyString(value.occurrenceKey)))
 
 const validateSchedule = (
   value: unknown,
@@ -319,8 +323,8 @@ const validateSettings = (
 
 const normalizeDoseSource = (dose: DoseRecord): DoseRecord => {
   const hasScheduleMetadata =
-    typeof dose.scheduleId === 'string' &&
-    typeof dose.occurrenceKey === 'string'
+    isNonEmptyString(dose.scheduleId) &&
+    isNonEmptyString(dose.occurrenceKey)
   const source = dose.source ?? (hasScheduleMetadata ? 'scheduled' : 'manual')
   const status =
     source === 'scheduled' && dose.status == null
