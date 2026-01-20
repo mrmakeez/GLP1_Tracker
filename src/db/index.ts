@@ -41,6 +41,27 @@ export const db = new Glp1Database()
 
 const nowIso = () => new Date().toISOString()
 
+type MedicationSeed = Omit<MedicationRecord, 'createdAt' | 'updatedAt'>
+
+export const DEFAULT_MEDICATION_PROFILES: MedicationSeed[] = [
+  {
+    id: 'default-tirzepatide',
+    name: 'Tirzepatide',
+    kaPerHour: 0.12,
+    kePerHour: 0.0058,
+    scale: 1,
+    notes: 'Approximate PK defaults (t1/2 ≈ 5 days, tmax ≈ 24-36h).',
+  },
+  {
+    id: 'default-retatrutide',
+    name: 'Retatrutide',
+    kaPerHour: 0.1,
+    kePerHour: 0.0048,
+    scale: 1,
+    notes: 'Approximate PK defaults (t1/2 ≈ 6 days, tmax ≈ 24-36h).',
+  },
+]
+
 export const generateId = () => {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
     return crypto.randomUUID()
@@ -51,6 +72,21 @@ export const generateId = () => {
 export const listMedications = () => db.medications.toArray()
 
 export const getMedication = (id: string) => db.medications.get(id)
+
+export const ensureDefaultMedications = async () => {
+  const count = await db.medications.count()
+  if (count === 0) {
+    const timestamp = nowIso()
+    await db.medications.bulkPut(
+      DEFAULT_MEDICATION_PROFILES.map((profile) => ({
+        ...profile,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      })),
+    )
+  }
+  return listMedications()
+}
 
 export const addMedication = async (
   input: Omit<MedicationRecord, 'id' | 'createdAt' | 'updatedAt'>,
@@ -219,6 +255,9 @@ const isScheduleFrequency = (
 const isValidIsoDate = (value: unknown): value is string =>
   isString(value) && !Number.isNaN(Date.parse(value))
 
+const isOptionalIsoDate = (value: unknown): value is string | undefined =>
+  value == null || isValidIsoDate(value)
+
 const validateMedication = (value: unknown): value is MedicationRecord =>
   isRecord(value) &&
   isString(value.id) &&
@@ -269,7 +308,8 @@ const validateSettings = (
   isString(value.defaultTimezone) &&
   isPositiveNumber(value.chartSampleMinutes) &&
   isNonNegativeNumber(value.defaultLookbackDays) &&
-  isNonNegativeNumber(value.defaultFutureDays)
+  isNonNegativeNumber(value.defaultFutureDays) &&
+  isOptionalIsoDate(value.lastReconciledAt)
 
 const normalizeDoseSource = (dose: DoseRecord): DoseRecord => {
   const hasScheduleMetadata =

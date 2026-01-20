@@ -19,10 +19,9 @@ import {
 } from 'recharts'
 import {
   DEFAULT_TIMEZONE,
-  addMedication,
+  ensureDefaultMedications,
   getSettings,
   listDoses,
-  listMedications,
   listSchedules,
   type DoseRecord,
   type MedicationRecord,
@@ -349,7 +348,7 @@ function ChartPage() {
   const reconcileAndRefreshDoses = useCallback(
     async (
       targetTime: number,
-      options?: { forceRefresh?: boolean; sinceTime?: number },
+      options?: { forceRefresh?: boolean; sinceTime?: number | null },
     ) => {
     if (reconcileInFlightRef.current) {
       return
@@ -361,9 +360,9 @@ function ChartPage() {
     try {
       const result = await reconcileScheduledDoses(new Date(targetTime), {
         since:
-          options?.sinceTime != null
-            ? new Date(options.sinceTime)
-            : undefined,
+          options?.sinceTime == null
+            ? options?.sinceTime
+            : new Date(options.sinceTime),
       })
       lastReconciledAtRef.current = targetTime
       if (result.createdCount > 0 || options?.forceRefresh) {
@@ -377,36 +376,19 @@ function ChartPage() {
 
   const loadData = async () => {
     const now = Date.now()
-    await reconcileScheduledDoses(new Date(now))
-    lastReconciledAtRef.current = now
-    const [loadedMedications, loadedDoses, loadedSchedules, loadedSettings] =
+    try {
+      await reconcileScheduledDoses(new Date(now))
+      lastReconciledAtRef.current = now
+    } catch (error) {
+      console.error('Failed to reconcile scheduled doses.', error)
+    }
+    const [resolvedMedications, loadedDoses, loadedSchedules, loadedSettings] =
       await Promise.all([
-        listMedications(),
+        ensureDefaultMedications(),
         listDoses(),
         listSchedules(),
         getSettings(),
       ])
-
-    let resolvedMedications = loadedMedications
-    if (resolvedMedications.length === 0) {
-      const defaults = await Promise.all([
-        addMedication({
-          name: 'Tirzepatide',
-          kaPerHour: 0.12,
-          kePerHour: 0.0058,
-          scale: 1,
-          notes: 'Approximate PK defaults (t1/2 ≈ 5 days, tmax ≈ 24-36h).',
-        }),
-        addMedication({
-          name: 'Retatrutide',
-          kaPerHour: 0.1,
-          kePerHour: 0.0048,
-          scale: 1,
-          notes: 'Approximate PK defaults (t1/2 ≈ 6 days, tmax ≈ 24-36h).',
-        }),
-      ])
-      resolvedMedications = defaults
-    }
 
     setMedications(resolvedMedications)
     setDoses(loadedDoses)
@@ -502,7 +484,7 @@ function ChartPage() {
     const timeout = window.setTimeout(() => {
       void reconcileAndRefreshDoses(Date.now(), {
         forceRefresh: true,
-        sinceTime: requiresFullScan ? undefined : lastReconciledAt,
+        sinceTime: requiresFullScan ? null : lastReconciledAt,
       })
     }, 300)
     previousSchedulesRef.current = new Map(
@@ -616,35 +598,33 @@ function ChartPage() {
     if (timePoints.length === 0) {
       return map
     }
-    for (const medication of visibleMedications) {
-      const dosesForMedication =
-        doseEventsByMedication.get(medication.id) ?? []
+    for (const [medicationId, dosesForMedication] of doseEventsByMedication) {
       if (dosesForMedication.length === 0) {
         continue
       }
       map.set(
-        medication.id,
+        medicationId,
         timePoints.map((t) => totalAmountAtTime(dosesForMedication, t)),
       )
     }
     return map
-  }, [timePoints, visibleMedications, doseEventsByMedication])
-
-  const allDoseEvents = useMemo(
-    () => Array.from(doseEventsByMedication.values()).flat(),
-    [doseEventsByMedication],
-  )
+  }, [timePoints, doseEventsByMedication])
 
   const totalAmounts = useMemo(() => {
     if (!showTotal || timePoints.length === 0) {
       return []
     }
-    const allDoses = allDoseEvents
-    if (allDoses.length === 0) {
+    if (medicationAmounts.size === 0) {
       return []
     }
-    return timePoints.map((t) => totalAmountAtTime(allDoses, t))
-  }, [timePoints, allDoseEvents, showTotal])
+    const totals = Array.from({ length: timePoints.length }, () => 0)
+    for (const amounts of medicationAmounts.values()) {
+      amounts.forEach((amount, index) => {
+        totals[index] += amount ?? 0
+      })
+    }
+    return totals
+  }, [timePoints, medicationAmounts, showTotal])
 
   const chartData = useMemo(() => {
     if (timePoints.length === 0) {

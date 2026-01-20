@@ -8,13 +8,12 @@ import {
 import {
   DEFAULT_TIMEZONE,
   addDose,
-  addMedication,
   addSchedule,
   deleteDose,
   deleteSchedule,
+  ensureDefaultMedications,
   getSettings,
   listDoses,
-  listMedications,
   listSchedules,
   updateDose,
   updateSchedule,
@@ -222,45 +221,26 @@ function DosesPage() {
   const loadData = async (options?: { forceFull?: boolean }) => {
     const now = Date.now()
     const sinceTime = options?.forceFull
-      ? undefined
+      ? null
       : lastReconciledAtRef.current ?? undefined
     try {
       await reconcileScheduledDoses(
         new Date(now),
-        sinceTime != null ? { since: new Date(sinceTime) } : undefined,
+        sinceTime == null
+          ? { since: sinceTime }
+          : { since: new Date(sinceTime) },
       )
       lastReconciledAtRef.current = now
     } catch (error) {
       console.error('Failed to reconcile scheduled doses.', error)
     }
-    const [loadedMedications, loadedDoses, loadedSchedules, loadedSettings] =
+    const [resolvedMedications, loadedDoses, loadedSchedules, loadedSettings] =
       await Promise.all([
-        listMedications(),
+        ensureDefaultMedications(),
         listDoses(),
         listSchedules(),
         getSettings(),
       ])
-
-    let resolvedMedications = loadedMedications
-    if (resolvedMedications.length === 0) {
-      const defaults = await Promise.all([
-        addMedication({
-          name: 'Tirzepatide',
-          kaPerHour: 0.12,
-          kePerHour: 0.0058,
-          scale: 1,
-          notes: 'Approximate PK defaults (t1/2 ≈ 5 days, tmax ≈ 24-36h).',
-        }),
-        addMedication({
-          name: 'Retatrutide',
-          kaPerHour: 0.1,
-          kePerHour: 0.0048,
-          scale: 1,
-          notes: 'Approximate PK defaults (t1/2 ≈ 6 days, tmax ≈ 24-36h).',
-        }),
-      ])
-      resolvedMedications = defaults
-    }
 
     setMedications(resolvedMedications)
     setDoses(loadedDoses)

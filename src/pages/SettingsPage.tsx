@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import {
   DEFAULT_TIMEZONE,
+  DEFAULT_MEDICATION_PROFILES,
   addMedication,
+  ensureDefaultMedications,
   getSettings,
-  listMedications,
   upsertSettings,
   updateMedication,
   type MedicationRecord,
@@ -37,28 +38,11 @@ const DEFAULT_SETTINGS: SettingsFormState = {
   defaultFutureDays: 7,
 }
 
-const DEFAULT_MEDICATIONS = [
-  {
-    name: 'Tirzepatide',
-    kaPerHour: 0.12,
-    kePerHour: 0.0058,
-    scale: 1,
-    notes: 'Approximate PK defaults (t1/2 ≈ 5 days, tmax ≈ 24-36h).',
-  },
-  {
-    name: 'Retatrutide',
-    kaPerHour: 0.1,
-    kePerHour: 0.0048,
-    scale: 1,
-    notes: 'Approximate PK defaults (t1/2 ≈ 6 days, tmax ≈ 24-36h).',
-  },
-]
-
 const DEFAULT_NEW_MEDICATION = {
   name: '',
-  kaPerHour: String(DEFAULT_MEDICATIONS[0].kaPerHour),
-  kePerHour: String(DEFAULT_MEDICATIONS[0].kePerHour),
-  scale: String(DEFAULT_MEDICATIONS[0].scale),
+  kaPerHour: String(DEFAULT_MEDICATION_PROFILES[0].kaPerHour),
+  kePerHour: String(DEFAULT_MEDICATION_PROFILES[0].kePerHour),
+  scale: String(DEFAULT_MEDICATION_PROFILES[0].scale),
   notes: '',
 }
 
@@ -120,18 +104,10 @@ function SettingsPage() {
   >({})
 
   const loadData = async () => {
-    const [loadedSettings, loadedMedications] = await Promise.all([
+    const [loadedSettings, resolvedMedications] = await Promise.all([
       getSettings(),
-      listMedications(),
+      ensureDefaultMedications(),
     ])
-
-    let resolvedMedications = loadedMedications
-    if (resolvedMedications.length === 0) {
-      const defaults = await Promise.all(
-        DEFAULT_MEDICATIONS.map((medication) => addMedication(medication)),
-      )
-      resolvedMedications = defaults
-    }
 
     setSettingsForm({
       defaultTimezone: loadedSettings.defaultTimezone,
