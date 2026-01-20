@@ -6,7 +6,11 @@ import {
   listSchedules,
   type DoseRecord,
 } from '../db'
-import { addDaysInTimezone, getLocalDayIndex } from './timezone'
+import {
+  addDaysInTimezone,
+  getLocalDayIndex,
+  isValidTimeZone,
+} from './timezone'
 
 export type ReconcileResult = { createdCount: number }
 
@@ -45,7 +49,11 @@ export async function reconcileScheduledDoses(
         continue
       }
 
-      const timezone = schedule.timezone || settings.defaultTimezone
+      const fallbackTimezone = settings.defaultTimezone
+      const rawTimezone = schedule.timezone || fallbackTimezone
+      const timezone = isValidTimeZone(rawTimezone)
+        ? rawTimezone
+        : fallbackTimezone
       let occurrenceTime = start.getTime()
 
       if (
@@ -81,31 +89,15 @@ export async function reconcileScheduledDoses(
         }
       }
 
+      const occurrences: Array<{
+        datetime: Date
+        occurrenceKey: string
+      }> = []
+
       while (occurrenceTime <= nowTime) {
         const occurrenceDatetime = new Date(occurrenceTime)
         const occurrenceKey = `${schedule.id}_${occurrenceDatetime.toISOString()}`
-        const existing = await db.doses
-          .where('occurrenceKey')
-          .equals(occurrenceKey)
-          .first()
-
-        if (!existing) {
-          const timestamp = new Date().toISOString()
-          dosesToCreate.push({
-            id: generateId(),
-            medicationId: schedule.medicationId,
-            doseMg: schedule.doseMg,
-            datetimeIso: occurrenceDatetime.toISOString(),
-            timezone,
-            source: 'scheduled',
-            scheduleId: schedule.id,
-            occurrenceKey,
-            status: 'assumed_taken',
-            createdAt: timestamp,
-            updatedAt: timestamp,
-          })
-        }
-
+        occurrences.push({ datetime: occurrenceDatetime, occurrenceKey })
         const nextOccurrence = addDaysInTimezone(
           occurrenceDatetime,
           intervalDays,
@@ -115,6 +107,43 @@ export async function reconcileScheduledDoses(
           break
         }
         occurrenceTime = nextOccurrence.getTime()
+      }
+
+      if (occurrences.length === 0) {
+        continue
+      }
+
+      const existing = await db.doses
+        .where('occurrenceKey')
+        .anyOf(occurrences.map((occurrence) => occurrence.occurrenceKey))
+        .toArray()
+      const existingKeys = new Set(
+        existing
+          .map((record) => record.occurrenceKey)
+          .filter(
+            (occurrenceKey): occurrenceKey is string =>
+              typeof occurrenceKey === 'string',
+          ),
+      )
+
+      for (const occurrence of occurrences) {
+        if (existingKeys.has(occurrence.occurrenceKey)) {
+          continue
+        }
+        const timestamp = new Date().toISOString()
+        dosesToCreate.push({
+          id: generateId(),
+          medicationId: schedule.medicationId,
+          doseMg: schedule.doseMg,
+          datetimeIso: occurrence.datetime.toISOString(),
+          timezone,
+          source: 'scheduled',
+          scheduleId: schedule.id,
+          occurrenceKey: occurrence.occurrenceKey,
+          status: 'assumed_taken',
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        })
       }
     }
 

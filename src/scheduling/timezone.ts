@@ -9,21 +9,38 @@ type DateParts = {
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000
 
+export const isValidTimeZone = (timezone: string) => {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: timezone })
+    return true
+  } catch {
+    return false
+  }
+}
+
 const getDatePartsInZone = (
   date: Date,
   timezone: string,
 ): DateParts | null => {
-  const formatter = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hourCycle: 'h23',
-  })
-  const parts = formatter.formatToParts(date)
+  if (!isValidTimeZone(timezone)) {
+    return null
+  }
+  let parts: Intl.DateTimeFormatPart[]
+  try {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23',
+    })
+    parts = formatter.formatToParts(date)
+  } catch {
+    return null
+  }
   const valueByType = new Map(
     parts.map((part) => [part.type, part.value]),
   )

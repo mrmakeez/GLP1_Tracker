@@ -38,6 +38,7 @@ import {
 import {
   addDaysInTimezone,
   getLocalDayIndex,
+  isValidTimeZone,
 } from '../scheduling/timezone'
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000
@@ -54,7 +55,7 @@ const FUTURE_OPTIONS = [
   { label: '7d', value: '7d', days: 7 },
   { label: '10d', value: '10d', days: 10 },
   { label: '30d', value: '30d', days: 30 },
-  { label: '4mo', value: '4mo', months: 4 },
+  { label: '4mo', value: '4mo', days: 120, months: 4 },
 ]
 
 const COLORS = [
@@ -74,14 +75,18 @@ const addMonths = (date: Date, months: number) => {
   return next
 }
 
+const resolveTimezone = (timezone: string) =>
+  isValidTimeZone(timezone) ? timezone : DEFAULT_TIMEZONE
+
 const formatDateTime = (date: Date, timezone: string) => {
   if (Number.isNaN(date.getTime())) {
     return ''
   }
+  const resolvedTimezone = resolveTimezone(timezone)
   return new Intl.DateTimeFormat('en-NZ', {
     dateStyle: 'medium',
     timeStyle: 'short',
-    timeZone: timezone,
+    timeZone: resolvedTimezone,
   }).format(date)
 }
 
@@ -313,7 +318,7 @@ function ChartPage() {
     new Map(),
   )
 
-  const timezone = settings?.defaultTimezone ?? DEFAULT_TIMEZONE
+  const timezone = resolveTimezone(settings?.defaultTimezone ?? DEFAULT_TIMEZONE)
   const sampleMinutes = settings?.chartSampleMinutes ?? 60
 
   const medicationById = useMemo(() => {

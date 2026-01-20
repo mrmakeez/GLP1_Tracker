@@ -19,6 +19,7 @@ import {
   type SettingsRecord,
 } from '../db'
 import { reconcileScheduledDoses } from '../scheduling/reconcileScheduledDoses'
+import { isValidTimeZone } from '../scheduling/timezone'
 
 type DoseFormState = {
   medicationId: string
@@ -55,10 +56,13 @@ const formatDateTime = (isoString: string, timezone: string) => {
   if (Number.isNaN(date.getTime())) {
     return isoString
   }
+  const resolvedTimezone = isValidTimeZone(timezone)
+    ? timezone
+    : DEFAULT_TIMEZONE
   return new Intl.DateTimeFormat('en-NZ', {
     dateStyle: 'medium',
     timeStyle: 'short',
-    timeZone: timezone,
+    timeZone: resolvedTimezone,
   }).format(date)
 }
 
@@ -67,8 +71,11 @@ const toLocalInputValue = (isoString: string, timezone: string) => {
   if (Number.isNaN(date.getTime())) {
     return ''
   }
+  const resolvedTimezone = isValidTimeZone(timezone)
+    ? timezone
+    : DEFAULT_TIMEZONE
   const formatter = new Intl.DateTimeFormat('en-CA', {
-    timeZone: timezone,
+    timeZone: resolvedTimezone,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -92,8 +99,11 @@ const toLocalInputValue = (isoString: string, timezone: string) => {
 }
 
 const getTimezoneOffsetMinutes = (timezone: string, date: Date) => {
+  const resolvedTimezone = isValidTimeZone(timezone)
+    ? timezone
+    : DEFAULT_TIMEZONE
   const formatter = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
+    timeZone: resolvedTimezone,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -133,14 +143,17 @@ const parseDateTimeInZone = (
   ) {
     return null
   }
+  const resolvedTimezone = isValidTimeZone(timezone)
+    ? timezone
+    : DEFAULT_TIMEZONE
   const utcGuess = Date.UTC(year, month - 1, day, hour, minute)
   const initialOffset = getTimezoneOffsetMinutes(
-    timezone,
+    resolvedTimezone,
     new Date(utcGuess),
   )
   let adjusted = utcGuess - initialOffset * 60000
   const adjustedOffset = getTimezoneOffsetMinutes(
-    timezone,
+    resolvedTimezone,
     new Date(adjusted),
   )
   if (adjustedOffset !== initialOffset) {
@@ -166,7 +179,9 @@ function DosesPage() {
     null,
   )
 
-  const timezone = settings?.defaultTimezone ?? DEFAULT_TIMEZONE
+  const timezone = isValidTimeZone(settings?.defaultTimezone ?? '')
+    ? settings?.defaultTimezone ?? DEFAULT_TIMEZONE
+    : DEFAULT_TIMEZONE
 
   const medicationById = useMemo(() => {
     return new Map(medications.map((medication) => [medication.id, medication]))
