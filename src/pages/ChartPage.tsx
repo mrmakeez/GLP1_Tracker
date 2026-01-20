@@ -182,7 +182,7 @@ const buildFutureScheduleDoses = (
 
 const getNextScheduledOccurrenceTime = (
   schedules: ScheduleRecord[],
-  nowTime: number,
+  sinceTime: number,
   defaultTimezone: string,
 ): number | null => {
   let nextTime: number | null = null
@@ -200,13 +200,13 @@ const getNextScheduledOccurrenceTime = (
     }
     const timezone = schedule.timezone || defaultTimezone
     let candidateDate = new Date(startTime)
-    if (startTime < nowTime) {
+    if (startTime < sinceTime) {
       const startDay = getLocalDayIndex(candidateDate, timezone)
-      const nowDay = getLocalDayIndex(new Date(nowTime), timezone)
-      if (startDay == null || nowDay == null) {
+      const sinceDay = getLocalDayIndex(new Date(sinceTime), timezone)
+      if (startDay == null || sinceDay == null) {
         continue
       }
-      const diffDays = nowDay - startDay
+      const diffDays = sinceDay - startDay
       const steps = Math.floor(diffDays / intervalDays)
       const stepDays = steps * intervalDays
       if (stepDays > 0) {
@@ -217,7 +217,7 @@ const getNextScheduledOccurrenceTime = (
         candidateDate = stepped
       }
     }
-    while (candidateDate.getTime() <= nowTime) {
+    while (candidateDate.getTime() <= sinceTime) {
       const next = addDaysInTimezone(candidateDate, intervalDays, timezone)
       if (!next) {
         candidateDate = new Date(Number.NaN)
@@ -361,18 +361,19 @@ function ChartPage() {
     return () => window.clearInterval(interval)
   }, [])
 
-  const nextScheduledOccurrenceTime = useMemo(() => {
-    return getNextScheduledOccurrenceTime(schedules, nowTime, timezone)
-  }, [schedules, nowTime, timezone])
-
   useEffect(() => {
+    const nextScheduledOccurrenceTime = getNextScheduledOccurrenceTime(
+      schedules,
+      lastReconciledAtRef.current,
+      timezone,
+    )
     if (
       nextScheduledOccurrenceTime !== null &&
       nowTime >= nextScheduledOccurrenceTime
     ) {
       void reconcileAndRefreshDoses(nowTime)
     }
-  }, [nowTime, nextScheduledOccurrenceTime, reconcileAndRefreshDoses])
+  }, [nowTime, schedules, timezone, reconcileAndRefreshDoses])
 
   const activeFutureOption = useMemo(() => {
     return (
