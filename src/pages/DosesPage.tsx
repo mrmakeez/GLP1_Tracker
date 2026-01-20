@@ -317,6 +317,22 @@ function DosesPage() {
 
     if (editingDoseId) {
       if (existingDose?.source === 'scheduled') {
+        const shouldDetachSchedule =
+          payload.datetimeIso !== existingDose.datetimeIso ||
+          payload.medicationId !== existingDose.medicationId ||
+          payload.doseMg !== existingDose.doseMg
+        if (shouldDetachSchedule) {
+          await updateDose(editingDoseId, {
+            ...payload,
+            source: 'manual',
+            scheduleId: undefined,
+            occurrenceKey: undefined,
+            status: undefined,
+          })
+          resetDoseForm()
+          await loadData()
+          return
+        }
         await updateDose(editingDoseId, {
           ...payload,
           source: 'scheduled',

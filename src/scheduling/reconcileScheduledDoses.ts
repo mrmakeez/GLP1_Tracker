@@ -113,13 +113,18 @@ export async function reconcileScheduledDoses(
         }
       }
 
+      if (occurrenceTime > nowTime) {
+        continue
+      }
+
       const occurrencePrefix = `${schedule.id}_`
+      const occurrenceLowerBound = `${schedule.id}_${new Date(occurrenceTime).toISOString()}`
       const occurrenceUpperBound = `${schedule.id}_\uffff`
       const existingKeys = new Set(
         (
           await db.doses
             .where('occurrenceKey')
-            .between(occurrencePrefix, occurrenceUpperBound)
+            .between(occurrenceLowerBound, occurrenceUpperBound)
             .toArray()
         )
           .map((record) => record.occurrenceKey)
