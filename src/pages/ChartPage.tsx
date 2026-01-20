@@ -177,9 +177,7 @@ const buildMedicationAmounts = (
     const tMaxHours =
       Math.abs(kaMinusKe) < 1e-8
         ? 1 / kaPerHour
-        : kaPerHour > kePerHour
-          ? Math.log(kaPerHour / kePerHour) / kaMinusKe
-          : 0
+        : Math.log(kaPerHour / kePerHour) / kaMinusKe
     for (let index = startIndex; index < timeValues.length; index += 1) {
       const dtHours = (timeValues[index] - doseTime) / (60 * 60 * 1000)
       const amount = amountFromDoseAtDeltaHours(dose, dtHours)
