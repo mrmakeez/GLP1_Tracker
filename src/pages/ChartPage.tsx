@@ -38,7 +38,7 @@ import {
 import {
   addDaysInTimezone,
   getLocalDayIndex,
-  isValidTimeZone,
+  resolveTimezone,
 } from '../scheduling/timezone'
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000
@@ -75,18 +75,14 @@ const addMonths = (date: Date, months: number) => {
   return next
 }
 
-const resolveTimezone = (timezone: string) =>
-  isValidTimeZone(timezone) ? timezone : DEFAULT_TIMEZONE
-
 const formatDateTime = (date: Date, timezone: string) => {
   if (Number.isNaN(date.getTime())) {
     return ''
   }
-  const resolvedTimezone = resolveTimezone(timezone)
   return new Intl.DateTimeFormat('en-NZ', {
     dateStyle: 'medium',
     timeStyle: 'short',
-    timeZone: resolvedTimezone,
+    timeZone: timezone,
   }).format(date)
 }
 
@@ -153,7 +149,10 @@ const buildFutureScheduleDoses = (
     return []
   }
 
-  const timezone = schedule.timezone || defaultTimezone
+  const timezone = resolveTimezone(
+    schedule.timezone || defaultTimezone,
+    defaultTimezone,
+  )
   const nowTime = now.getTime()
   const endTime = end.getTime()
   let nextDate = new Date(start.getTime())
@@ -238,7 +237,10 @@ const getNextScheduledOccurrenceTime = (
     if (!intervalDays || intervalDays <= 0) {
       continue
     }
-    const timezone = schedule.timezone || defaultTimezone
+    const timezone = resolveTimezone(
+      schedule.timezone || defaultTimezone,
+      defaultTimezone,
+    )
     let candidateDate = new Date(startTime)
     if (startTime < sinceTime) {
       let startDay = getLocalDayIndex(candidateDate, timezone)
@@ -318,7 +320,10 @@ function ChartPage() {
     new Map(),
   )
 
-  const timezone = resolveTimezone(settings?.defaultTimezone ?? DEFAULT_TIMEZONE)
+  const timezone = resolveTimezone(
+    settings?.defaultTimezone ?? DEFAULT_TIMEZONE,
+    DEFAULT_TIMEZONE,
+  )
   const sampleMinutes = settings?.chartSampleMinutes ?? 60
 
   const medicationById = useMemo(() => {

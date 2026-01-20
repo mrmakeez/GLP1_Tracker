@@ -18,6 +18,16 @@ export const isValidTimeZone = (timezone: string) => {
   }
 }
 
+export const resolveTimezone = (
+  timezone: string | null | undefined,
+  fallback: string,
+) => {
+  if (timezone && isValidTimeZone(timezone)) {
+    return timezone
+  }
+  return isValidTimeZone(fallback) ? fallback : 'UTC'
+}
+
 const getDatePartsInZone = (
   date: Date,
   timezone: string,
