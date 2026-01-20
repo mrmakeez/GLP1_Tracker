@@ -186,6 +186,91 @@ export const exportDatabase = async (): Promise<ExportPayload> => {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
+const isString = (value: unknown): value is string =>
+  typeof value === 'string'
+
+const isNumber = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value)
+
+const isPositiveNumber = (value: unknown): value is number =>
+  isNumber(value) && value > 0
+
+const isNonNegativeNumber = (value: unknown): value is number =>
+  isNumber(value) && value >= 0
+
+const isBoolean = (value: unknown): value is boolean =>
+  typeof value === 'boolean'
+
+const isDoseSource = (value: unknown): value is DoseSource =>
+  value === 'manual' || value === 'scheduled'
+
+const isScheduledStatus = (
+  value: unknown,
+): value is ScheduledDoseStatus =>
+  value === 'assumed_taken' ||
+  value === 'confirmed_taken' ||
+  value === 'skipped'
+
+const isScheduleFrequency = (
+  value: unknown,
+): value is ScheduleFrequency =>
+  value === 'daily' || value === 'weekly' || value === 'custom'
+
+const isValidIsoDate = (value: unknown): value is string =>
+  isString(value) && !Number.isNaN(Date.parse(value))
+
+const validateMedication = (value: unknown): value is MedicationRecord =>
+  isRecord(value) &&
+  isString(value.id) &&
+  isString(value.name) &&
+  isPositiveNumber(value.kaPerHour) &&
+  isPositiveNumber(value.kePerHour) &&
+  isPositiveNumber(value.scale) &&
+  isString(value.notes) &&
+  isValidIsoDate(value.createdAt) &&
+  isValidIsoDate(value.updatedAt)
+
+const validateDose = (value: unknown): value is DoseRecord =>
+  isRecord(value) &&
+  isString(value.id) &&
+  isString(value.medicationId) &&
+  isPositiveNumber(value.doseMg) &&
+  isValidIsoDate(value.datetimeIso) &&
+  isString(value.timezone) &&
+  isValidIsoDate(value.createdAt) &&
+  isValidIsoDate(value.updatedAt) &&
+  (value.source == null || isDoseSource(value.source)) &&
+  (value.scheduleId == null || isString(value.scheduleId)) &&
+  (value.occurrenceKey == null || isString(value.occurrenceKey)) &&
+  (value.status == null || isScheduledStatus(value.status)) &&
+  (value.source !== 'scheduled' ||
+    (isString(value.scheduleId) && isString(value.occurrenceKey)))
+
+const validateSchedule = (
+  value: unknown,
+): value is ScheduleRecord =>
+  isRecord(value) &&
+  isString(value.id) &&
+  isString(value.medicationId) &&
+  isValidIsoDate(value.startDatetimeIso) &&
+  isString(value.timezone) &&
+  isPositiveNumber(value.doseMg) &&
+  isScheduleFrequency(value.frequency) &&
+  isPositiveNumber(value.interval) &&
+  isBoolean(value.enabled) &&
+  isValidIsoDate(value.createdAt) &&
+  isValidIsoDate(value.updatedAt)
+
+const validateSettings = (
+  value: unknown,
+): value is SettingsRecord =>
+  isRecord(value) &&
+  value.id === 'singleton' &&
+  isString(value.defaultTimezone) &&
+  isPositiveNumber(value.chartSampleMinutes) &&
+  isNonNegativeNumber(value.defaultLookbackDays) &&
+  isNonNegativeNumber(value.defaultFutureDays)
+
 export const validateImportPayload = (payload: unknown): ExportPayload => {
   if (!isRecord(payload)) {
     throw new Error('Invalid import payload.')
@@ -203,12 +288,39 @@ export const validateImportPayload = (payload: unknown): ExportPayload => {
     throw new Error('Missing data section.')
   }
 
-  const tables = ['medications', 'doses', 'schedules', 'settings'] as const
+  const data = payload.data as Record<string, unknown>
+  const medications = data.medications
+  const doses = data.doses
+  const schedules = data.schedules
+  const settings = data.settings
 
-  for (const table of tables) {
-    if (!Array.isArray(payload.data[table])) {
-      throw new Error(`Missing ${table} table.`)
-    }
+  if (!Array.isArray(medications)) {
+    throw new Error('Missing medications table.')
+  }
+  if (!Array.isArray(doses)) {
+    throw new Error('Missing doses table.')
+  }
+  if (!Array.isArray(schedules)) {
+    throw new Error('Missing schedules table.')
+  }
+  if (!Array.isArray(settings)) {
+    throw new Error('Missing settings table.')
+  }
+
+  if (!medications.every(validateMedication)) {
+    throw new Error('Invalid medication records.')
+  }
+
+  if (!doses.every(validateDose)) {
+    throw new Error('Invalid dose records.')
+  }
+
+  if (!schedules.every(validateSchedule)) {
+    throw new Error('Invalid schedule records.')
+  }
+
+  if (!settings.every(validateSettings)) {
+    throw new Error('Invalid settings records.')
   }
 
   return payload as ExportPayload

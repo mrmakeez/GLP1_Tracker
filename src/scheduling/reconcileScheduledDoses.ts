@@ -123,7 +123,9 @@ export async function reconcileScheduledDoses(
       const occurrenceLowerBound = `${schedule.id}_${new Date(
         occurrenceTime,
       ).toISOString()}`
-      const occurrenceUpperBound = `${schedule.id}_\uffff`
+      const occurrenceUpperBound = `${schedule.id}_${new Date(
+        nowTime,
+      ).toISOString()}`
       const existingKeys = new Set(
         (
           await db.doses
