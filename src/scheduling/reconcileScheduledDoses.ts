@@ -134,6 +134,7 @@ export async function reconcileScheduledDoses(
       }
 
       let lastOccurrenceTime: number | null = null
+      let createdForSchedule = false
 
       while (occurrenceTime <= nowTime) {
         const occurrenceDatetime = new Date(occurrenceTime)
@@ -146,6 +147,7 @@ export async function reconcileScheduledDoses(
 
         if (!existing) {
           const timestamp = new Date().toISOString()
+          createdForSchedule = true
           dosesToCreate.push({
             id: generateId(),
             medicationId: schedule.medicationId,
@@ -174,7 +176,7 @@ export async function reconcileScheduledDoses(
         effectiveTimezone = nextOccurrence.timezone
       }
 
-      if (lastOccurrenceTime != null) {
+      if (createdForSchedule && lastOccurrenceTime != null) {
         scheduleUpdates.push({
           id: schedule.id,
           lastMaterializedAt: new Date(lastOccurrenceTime).toISOString(),
