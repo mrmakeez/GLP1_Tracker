@@ -324,8 +324,8 @@ function DosesPage() {
           await updateDose(editingDoseId, {
             ...payload,
             source: 'manual',
-            scheduleId: undefined,
-            occurrenceKey: undefined,
+            scheduleId: existingDose.scheduleId,
+            occurrenceKey: existingDose.occurrenceKey,
             status: undefined,
           })
           resetDoseForm()

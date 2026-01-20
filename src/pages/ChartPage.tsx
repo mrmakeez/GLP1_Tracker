@@ -168,12 +168,25 @@ const buildMedicationAmounts = (
   if (timeValues.length === 0) {
     return amounts
   }
+  const AMOUNT_EPSILON = 1e-6
   for (const dose of dosesForMedication) {
     const doseTime = dose.datetime.getTime()
     const startIndex = findFirstIndexAtOrAfter(timeValues, doseTime)
+    const { kaPerHour, kePerHour } = dose.medication
+    const kaMinusKe = kaPerHour - kePerHour
+    const tMaxHours =
+      Math.abs(kaMinusKe) < 1e-8
+        ? 1 / kaPerHour
+        : kaPerHour > kePerHour
+          ? Math.log(kaPerHour / kePerHour) / kaMinusKe
+          : 0
     for (let index = startIndex; index < timeValues.length; index += 1) {
       const dtHours = (timeValues[index] - doseTime) / (60 * 60 * 1000)
-      amounts[index] += amountFromDoseAtDeltaHours(dose, dtHours)
+      const amount = amountFromDoseAtDeltaHours(dose, dtHours)
+      amounts[index] += amount
+      if (dtHours > tMaxHours && amount <= AMOUNT_EPSILON) {
+        break
+      }
     }
   }
   return amounts
