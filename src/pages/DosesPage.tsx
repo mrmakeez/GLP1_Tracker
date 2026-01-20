@@ -251,6 +251,10 @@ function DosesPage() {
   const handleDoseSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const errors: Record<string, string> = {}
+    const existingDose = editingDoseId
+      ? doses.find((dose) => dose.id === editingDoseId)
+      : undefined
+    const resolvedTimezone = existingDose?.timezone ?? timezone
     if (!doseForm.medicationId) {
       errors.medicationId = 'Select a medication.'
     }
@@ -264,7 +268,7 @@ function DosesPage() {
 
     const parsedDate = parseDateTimeInZone(
       doseForm.datetimeLocal,
-      timezone,
+      resolvedTimezone,
     )
     if (
       doseForm.datetimeLocal &&
@@ -285,11 +289,10 @@ function DosesPage() {
       medicationId: doseForm.medicationId,
       doseMg: doseValue,
       datetimeIso: parsedDate.toISOString(),
-      timezone,
+      timezone: resolvedTimezone,
     }
 
     if (editingDoseId) {
-      const existingDose = doses.find((dose) => dose.id === editingDoseId)
       if (existingDose?.source === 'scheduled') {
         await updateDose(editingDoseId, {
           ...payload,
@@ -314,6 +317,10 @@ function DosesPage() {
   ) => {
     event.preventDefault()
     const errors: Record<string, string> = {}
+    const existingSchedule = editingScheduleId
+      ? schedules.find((schedule) => schedule.id === editingScheduleId)
+      : undefined
+    const resolvedTimezone = existingSchedule?.timezone ?? timezone
     if (!scheduleForm.medicationId) {
       errors.medicationId = 'Select a medication.'
     }
@@ -326,7 +333,7 @@ function DosesPage() {
     }
     const parsedDate = parseDateTimeInZone(
       scheduleForm.startDatetimeLocal,
-      timezone,
+      resolvedTimezone,
     )
     if (
       scheduleForm.startDatetimeLocal &&
@@ -364,7 +371,7 @@ function DosesPage() {
       frequency: scheduleForm.frequency,
       interval: resolvedInterval,
       startDatetimeIso: parsedDate.toISOString(),
-      timezone,
+      timezone: resolvedTimezone,
       enabled: scheduleForm.enabled,
     }
 
@@ -724,7 +731,10 @@ function DosesPage() {
                       </td>
                       <td className="px-4 py-3">{row.doseMg} mg</td>
                       <td className="px-4 py-3">
-                        {formatDateTime(row.datetimeIso, timezone)}
+                        {formatDateTime(
+                          row.datetimeIso,
+                          row.timezone ?? timezone,
+                        )}
                       </td>
                       <td className="px-4 py-3 text-slate-400">
                         <div className="flex flex-wrap gap-2">
@@ -766,7 +776,7 @@ function DosesPage() {
                                 doseMg: String(row.doseMg),
                                 datetimeLocal: toLocalInputValue(
                                   row.datetimeIso,
-                                  timezone,
+                                  row.timezone ?? timezone,
                                 ),
                               })
                               setDoseErrors({})
@@ -848,7 +858,10 @@ function DosesPage() {
                       <td className="px-4 py-3">{schedule.doseMg} mg</td>
                       <td className="px-4 py-3">{frequencyLabel}</td>
                       <td className="px-4 py-3">
-                        {formatDateTime(schedule.startDatetimeIso, timezone)}
+                        {formatDateTime(
+                          schedule.startDatetimeIso,
+                          schedule.timezone ?? timezone,
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         {schedule.enabled ? 'Enabled' : 'Paused'}
@@ -868,7 +881,7 @@ function DosesPage() {
                                 intervalDays: String(schedule.interval),
                                 startDatetimeLocal: toLocalInputValue(
                                   schedule.startDatetimeIso,
-                                  timezone,
+                                  schedule.timezone ?? timezone,
                                 ),
                               })
                               setScheduleErrors({})
