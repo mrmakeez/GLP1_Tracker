@@ -271,12 +271,28 @@ const validateSettings = (
   isNonNegativeNumber(value.defaultLookbackDays) &&
   isNonNegativeNumber(value.defaultFutureDays)
 
+const normalizeDoseSource = (dose: DoseRecord): DoseRecord => {
+  const hasScheduleMetadata =
+    typeof dose.scheduleId === 'string' ||
+    typeof dose.occurrenceKey === 'string'
+  if (dose.source) {
+    return dose
+  }
+  return {
+    ...dose,
+    source: hasScheduleMetadata ? 'scheduled' : 'manual',
+  }
+}
+
 export const validateImportPayload = (payload: unknown): ExportPayload => {
   if (!isRecord(payload)) {
     throw new Error('Invalid import payload.')
   }
 
-  if (payload.schemaVersion !== DB_SCHEMA_VERSION) {
+  if (
+    typeof payload.schemaVersion !== 'number' ||
+    payload.schemaVersion > DB_SCHEMA_VERSION
+  ) {
     throw new Error('Unsupported schema version.')
   }
 
@@ -323,7 +339,17 @@ export const validateImportPayload = (payload: unknown): ExportPayload => {
     throw new Error('Invalid settings records.')
   }
 
-  return payload as ExportPayload
+  const normalizedDoses = doses.map((dose) =>
+    normalizeDoseSource(dose as DoseRecord),
+  )
+
+  return {
+    ...(payload as ExportPayload),
+    data: {
+      ...(payload as ExportPayload).data,
+      doses: normalizedDoses,
+    },
+  }
 }
 
 export const importDatabaseReplaceAll = async (
