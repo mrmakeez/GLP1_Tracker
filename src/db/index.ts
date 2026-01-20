@@ -10,6 +10,7 @@ import type {
   SettingsRecord,
 } from './types'
 import { DB_SCHEMA_VERSION, DEFAULT_TIMEZONE } from './types'
+import { isValidTimeZone } from '../scheduling/timezone'
 
 class Glp1Database extends Dexie {
   medications!: Table<MedicationRecord, string>
@@ -234,6 +235,9 @@ const isPositiveNumber = (value: unknown): value is number =>
 const isNonNegativeNumber = (value: unknown): value is number =>
   isNumber(value) && value >= 0
 
+const isPositiveInteger = (value: unknown): value is number =>
+  isNumber(value) && Number.isInteger(value) && value > 0
+
 const isBoolean = (value: unknown): value is boolean =>
   typeof value === 'boolean'
 
@@ -293,9 +297,10 @@ const validateSchedule = (
   isString(value.medicationId) &&
   isValidIsoDate(value.startDatetimeIso) &&
   isString(value.timezone) &&
+  isValidTimeZone(value.timezone) &&
   isPositiveNumber(value.doseMg) &&
   isScheduleFrequency(value.frequency) &&
-  isPositiveNumber(value.interval) &&
+  isPositiveInteger(value.interval) &&
   isBoolean(value.enabled) &&
   isValidIsoDate(value.createdAt) &&
   isValidIsoDate(value.updatedAt)
@@ -306,6 +311,7 @@ const validateSettings = (
   isRecord(value) &&
   value.id === 'singleton' &&
   isString(value.defaultTimezone) &&
+  isValidTimeZone(value.defaultTimezone) &&
   isPositiveNumber(value.chartSampleMinutes) &&
   isNonNegativeNumber(value.defaultLookbackDays) &&
   isNonNegativeNumber(value.defaultFutureDays) &&
@@ -331,7 +337,11 @@ const coerceTimezone = (value: unknown) => {
   if (!isRecord(value)) {
     return value
   }
-  if (typeof value.timezone === 'string' && value.timezone.length > 0) {
+  if (
+    typeof value.timezone === 'string' &&
+    value.timezone.length > 0 &&
+    isValidTimeZone(value.timezone)
+  ) {
     return value
   }
   return { ...value, timezone: DEFAULT_TIMEZONE }
@@ -343,7 +353,8 @@ const coerceSettingsTimezone = (value: unknown) => {
   }
   if (
     typeof value.defaultTimezone === 'string' &&
-    value.defaultTimezone.length > 0
+    value.defaultTimezone.length > 0 &&
+    isValidTimeZone(value.defaultTimezone)
   ) {
     return value
   }
@@ -416,18 +427,9 @@ export const validateImportPayload = (payload: unknown): ExportPayload => {
 
   const schemaVersion = payload.schemaVersion
   const normalizedMedications = medications
-  const normalizedDoses =
-    schemaVersion < DB_SCHEMA_VERSION
-      ? doses.map(normalizeImportedDose)
-      : doses
-  const normalizedSchedules =
-    schemaVersion < DB_SCHEMA_VERSION
-      ? schedules.map(coerceTimezone)
-      : schedules
-  const normalizedSettings =
-    schemaVersion < DB_SCHEMA_VERSION
-      ? settings.map(coerceSettingsTimezone)
-      : settings
+  const normalizedDoses = doses.map(normalizeImportedDose)
+  const normalizedSchedules = schedules.map(coerceTimezone)
+  const normalizedSettings = settings.map(coerceSettingsTimezone)
 
   if (!normalizedMedications.every(validateMedication)) {
     throw new Error('Invalid medication records.')

@@ -393,9 +393,10 @@ function DosesPage() {
       scheduleForm.frequency === 'custom' &&
       (!scheduleForm.intervalDays ||
         Number.isNaN(resolvedInterval) ||
-        resolvedInterval <= 0)
+        resolvedInterval <= 0 ||
+        !Number.isInteger(resolvedInterval))
     ) {
-      errors.intervalDays = 'Interval must be greater than 0.'
+      errors.intervalDays = 'Interval must be a whole number of days.'
     }
 
     setScheduleErrors(errors)
@@ -647,6 +648,7 @@ function DosesPage() {
               <input
                 type="number"
                 min="1"
+                step="1"
                 className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"
                 value={scheduleForm.intervalDays}
                 onChange={(event) =>
