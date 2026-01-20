@@ -410,6 +410,18 @@ function ChartPage() {
           break
         }
       }
+      if (previous.interval !== schedule.interval) {
+        if (startTime <= lastReconciledAt) {
+          requiresFullScan = true
+          break
+        }
+      }
+      if (previous.timezone !== schedule.timezone) {
+        if (startTime <= lastReconciledAt) {
+          requiresFullScan = true
+          break
+        }
+      }
     }
 
     const timeout = window.setTimeout(() => {
