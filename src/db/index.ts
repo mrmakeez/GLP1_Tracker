@@ -310,6 +310,31 @@ const coerceSettingsTimezone = (value: unknown) => {
   return { ...value, defaultTimezone: DEFAULT_TIMEZONE }
 }
 
+const normalizeImportedDose = (value: unknown) => {
+  if (!isRecord(value)) {
+    return value
+  }
+  const coerced = coerceTimezone(value)
+  if (!isRecord(coerced)) {
+    return coerced
+  }
+  if (coerced.source !== 'scheduled') {
+    return coerced
+  }
+  const hasScheduleId = typeof coerced.scheduleId === 'string'
+  const hasOccurrenceKey = typeof coerced.occurrenceKey === 'string'
+  if (hasScheduleId && hasOccurrenceKey) {
+    return coerced
+  }
+  return {
+    ...coerced,
+    source: undefined,
+    scheduleId: hasScheduleId ? coerced.scheduleId : undefined,
+    occurrenceKey: hasOccurrenceKey ? coerced.occurrenceKey : undefined,
+    status: undefined,
+  }
+}
+
 export const validateImportPayload = (payload: unknown): ExportPayload => {
   if (!isRecord(payload)) {
     throw new Error('Invalid import payload.')
@@ -353,7 +378,7 @@ export const validateImportPayload = (payload: unknown): ExportPayload => {
   const normalizedMedications = medications
   const normalizedDoses =
     schemaVersion < DB_SCHEMA_VERSION
-      ? doses.map(coerceTimezone)
+      ? doses.map(normalizeImportedDose)
       : doses
   const normalizedSchedules =
     schemaVersion < DB_SCHEMA_VERSION
