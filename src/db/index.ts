@@ -192,6 +192,12 @@ const isString = (value: unknown): value is string =>
 const isNumber = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value)
 
+const isPositiveNumber = (value: unknown): value is number =>
+  isNumber(value) && value > 0
+
+const isNonNegativeNumber = (value: unknown): value is number =>
+  isNumber(value) && value >= 0
+
 const isBoolean = (value: unknown): value is boolean =>
   typeof value === 'boolean'
 
@@ -210,30 +216,35 @@ const isScheduleFrequency = (
 ): value is ScheduleFrequency =>
   value === 'daily' || value === 'weekly' || value === 'custom'
 
+const isValidIsoDate = (value: unknown): value is string =>
+  isString(value) && !Number.isNaN(Date.parse(value))
+
 const validateMedication = (value: unknown): value is MedicationRecord =>
   isRecord(value) &&
   isString(value.id) &&
   isString(value.name) &&
-  isNumber(value.kaPerHour) &&
-  isNumber(value.kePerHour) &&
-  isNumber(value.scale) &&
+  isPositiveNumber(value.kaPerHour) &&
+  isPositiveNumber(value.kePerHour) &&
+  isPositiveNumber(value.scale) &&
   isString(value.notes) &&
-  isString(value.createdAt) &&
-  isString(value.updatedAt)
+  isValidIsoDate(value.createdAt) &&
+  isValidIsoDate(value.updatedAt)
 
 const validateDose = (value: unknown): value is DoseRecord =>
   isRecord(value) &&
   isString(value.id) &&
   isString(value.medicationId) &&
-  isNumber(value.doseMg) &&
-  isString(value.datetimeIso) &&
+  isPositiveNumber(value.doseMg) &&
+  isValidIsoDate(value.datetimeIso) &&
   isString(value.timezone) &&
-  isString(value.createdAt) &&
-  isString(value.updatedAt) &&
+  isValidIsoDate(value.createdAt) &&
+  isValidIsoDate(value.updatedAt) &&
   (value.source == null || isDoseSource(value.source)) &&
   (value.scheduleId == null || isString(value.scheduleId)) &&
   (value.occurrenceKey == null || isString(value.occurrenceKey)) &&
-  (value.status == null || isScheduledStatus(value.status))
+  (value.status == null || isScheduledStatus(value.status)) &&
+  (value.source !== 'scheduled' ||
+    (isString(value.scheduleId) && isString(value.occurrenceKey)))
 
 const validateSchedule = (
   value: unknown,
@@ -241,14 +252,14 @@ const validateSchedule = (
   isRecord(value) &&
   isString(value.id) &&
   isString(value.medicationId) &&
-  isString(value.startDatetimeIso) &&
+  isValidIsoDate(value.startDatetimeIso) &&
   isString(value.timezone) &&
-  isNumber(value.doseMg) &&
+  isPositiveNumber(value.doseMg) &&
   isScheduleFrequency(value.frequency) &&
-  isNumber(value.interval) &&
+  isPositiveNumber(value.interval) &&
   isBoolean(value.enabled) &&
-  isString(value.createdAt) &&
-  isString(value.updatedAt)
+  isValidIsoDate(value.createdAt) &&
+  isValidIsoDate(value.updatedAt)
 
 const validateSettings = (
   value: unknown,
@@ -256,9 +267,9 @@ const validateSettings = (
   isRecord(value) &&
   value.id === 'singleton' &&
   isString(value.defaultTimezone) &&
-  isNumber(value.chartSampleMinutes) &&
-  isNumber(value.defaultLookbackDays) &&
-  isNumber(value.defaultFutureDays)
+  isPositiveNumber(value.chartSampleMinutes) &&
+  isNonNegativeNumber(value.defaultLookbackDays) &&
+  isNonNegativeNumber(value.defaultFutureDays)
 
 export const validateImportPayload = (payload: unknown): ExportPayload => {
   if (!isRecord(payload)) {
