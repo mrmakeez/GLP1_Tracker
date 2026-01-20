@@ -275,13 +275,39 @@ const normalizeDoseSource = (dose: DoseRecord): DoseRecord => {
   const hasScheduleMetadata =
     typeof dose.scheduleId === 'string' ||
     typeof dose.occurrenceKey === 'string'
-  if (dose.source) {
-    return dose
-  }
+  const source = dose.source ?? (hasScheduleMetadata ? 'scheduled' : 'manual')
+  const status =
+    source === 'scheduled' && dose.status == null
+      ? 'assumed_taken'
+      : dose.status
   return {
     ...dose,
-    source: hasScheduleMetadata ? 'scheduled' : 'manual',
+    source,
+    status,
   }
+}
+
+const coerceTimezone = (value: unknown) => {
+  if (!isRecord(value)) {
+    return value
+  }
+  if (typeof value.timezone === 'string' && value.timezone.length > 0) {
+    return value
+  }
+  return { ...value, timezone: DEFAULT_TIMEZONE }
+}
+
+const coerceSettingsTimezone = (value: unknown) => {
+  if (!isRecord(value)) {
+    return value
+  }
+  if (
+    typeof value.defaultTimezone === 'string' &&
+    value.defaultTimezone.length > 0
+  ) {
+    return value
+  }
+  return { ...value, defaultTimezone: DEFAULT_TIMEZONE }
 }
 
 export const validateImportPayload = (payload: unknown): ExportPayload => {
@@ -323,31 +349,48 @@ export const validateImportPayload = (payload: unknown): ExportPayload => {
     throw new Error('Missing settings table.')
   }
 
-  if (!medications.every(validateMedication)) {
+  const schemaVersion = payload.schemaVersion
+  const normalizedMedications = medications
+  const normalizedDoses =
+    schemaVersion < DB_SCHEMA_VERSION
+      ? doses.map(coerceTimezone)
+      : doses
+  const normalizedSchedules =
+    schemaVersion < DB_SCHEMA_VERSION
+      ? schedules.map(coerceTimezone)
+      : schedules
+  const normalizedSettings =
+    schemaVersion < DB_SCHEMA_VERSION
+      ? settings.map(coerceSettingsTimezone)
+      : settings
+
+  if (!normalizedMedications.every(validateMedication)) {
     throw new Error('Invalid medication records.')
   }
 
-  if (!doses.every(validateDose)) {
+  if (!normalizedDoses.every(validateDose)) {
     throw new Error('Invalid dose records.')
   }
 
-  if (!schedules.every(validateSchedule)) {
+  if (!normalizedSchedules.every(validateSchedule)) {
     throw new Error('Invalid schedule records.')
   }
 
-  if (!settings.every(validateSettings)) {
+  if (!normalizedSettings.every(validateSettings)) {
     throw new Error('Invalid settings records.')
   }
 
-  const normalizedDoses = doses.map((dose) =>
+  const normalizedDosesWithSource = normalizedDoses.map((dose) =>
     normalizeDoseSource(dose as DoseRecord),
   )
 
   return {
     ...(payload as ExportPayload),
     data: {
-      ...(payload as ExportPayload).data,
-      doses: normalizedDoses,
+      medications: normalizedMedications as MedicationRecord[],
+      doses: normalizedDosesWithSource,
+      schedules: normalizedSchedules as ScheduleRecord[],
+      settings: normalizedSettings as SettingsRecord[],
     },
   }
 }

@@ -630,16 +630,21 @@ function ChartPage() {
     return map
   }, [timePoints, visibleMedications, doseEventsByMedication])
 
+  const allDoseEvents = useMemo(
+    () => Array.from(doseEventsByMedication.values()).flat(),
+    [doseEventsByMedication],
+  )
+
   const totalAmounts = useMemo(() => {
     if (!showTotal || timePoints.length === 0) {
       return []
     }
-    const allDoses = Array.from(doseEventsByMedication.values()).flat()
+    const allDoses = allDoseEvents
     if (allDoses.length === 0) {
       return []
     }
     return timePoints.map((t) => totalAmountAtTime(allDoses, t))
-  }, [timePoints, doseEventsByMedication, showTotal])
+  }, [timePoints, allDoseEvents, showTotal])
 
   const chartData = useMemo(() => {
     if (timePoints.length === 0) {

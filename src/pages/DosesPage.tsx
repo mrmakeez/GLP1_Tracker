@@ -224,11 +224,15 @@ function DosesPage() {
     const sinceTime = options?.forceFull
       ? undefined
       : lastReconciledAtRef.current ?? undefined
-    await reconcileScheduledDoses(
-      new Date(now),
-      sinceTime != null ? { since: new Date(sinceTime) } : undefined,
-    )
-    lastReconciledAtRef.current = now
+    try {
+      await reconcileScheduledDoses(
+        new Date(now),
+        sinceTime != null ? { since: new Date(sinceTime) } : undefined,
+      )
+      lastReconciledAtRef.current = now
+    } catch (error) {
+      console.error('Failed to reconcile scheduled doses.', error)
+    }
     const [loadedMedications, loadedDoses, loadedSchedules, loadedSettings] =
       await Promise.all([
         listMedications(),
