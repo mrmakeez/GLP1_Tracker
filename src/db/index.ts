@@ -427,7 +427,10 @@ export const validateImportPayload = (payload: unknown): ExportPayload => {
 
   const schemaVersion = payload.schemaVersion
   const normalizedMedications = medications
-  const normalizedDoses = doses.map(normalizeImportedDose)
+  const normalizedDoses =
+    schemaVersion < DB_SCHEMA_VERSION
+      ? doses.map(normalizeImportedDose)
+      : doses.map(coerceTimezone)
   const normalizedSchedules = schedules.map(coerceTimezone)
   const normalizedSettings = settings.map(coerceSettingsTimezone)
 
