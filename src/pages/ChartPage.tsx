@@ -362,6 +362,13 @@ function ChartPage() {
   }, [])
 
   useEffect(() => {
+    if (schedules.length === 0) {
+      return
+    }
+    void reconcileAndRefreshDoses(Date.now())
+  }, [schedules, reconcileAndRefreshDoses])
+
+  useEffect(() => {
     const nextScheduledOccurrenceTime = getNextScheduledOccurrenceTime(
       schedules,
       lastReconciledAtRef.current,
