@@ -288,27 +288,28 @@ export const validateImportPayload = (payload: unknown): ExportPayload => {
     throw new Error('Missing data section.')
   }
 
+  const data = payload.data as Record<string, unknown>
   const tables = ['medications', 'doses', 'schedules', 'settings'] as const
 
   for (const table of tables) {
-    if (!Array.isArray(payload.data[table])) {
+    if (!Array.isArray(data[table])) {
       throw new Error(`Missing ${table} table.`)
     }
   }
 
-  if (!payload.data.medications.every(validateMedication)) {
+  if (!data.medications.every(validateMedication)) {
     throw new Error('Invalid medication records.')
   }
 
-  if (!payload.data.doses.every(validateDose)) {
+  if (!data.doses.every(validateDose)) {
     throw new Error('Invalid dose records.')
   }
 
-  if (!payload.data.schedules.every(validateSchedule)) {
+  if (!data.schedules.every(validateSchedule)) {
     throw new Error('Invalid schedule records.')
   }
 
-  if (!payload.data.settings.every(validateSettings)) {
+  if (!data.settings.every(validateSettings)) {
     throw new Error('Invalid settings records.')
   }
 
