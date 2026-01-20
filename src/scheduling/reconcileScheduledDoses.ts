@@ -39,13 +39,16 @@ export async function reconcileScheduledDoses(
     typeof lastReconciledAt === 'string'
       ? new Date(lastReconciledAt).getTime()
       : undefined
-  const sinceTime =
+  let sinceTime =
     options?.since === null
       ? undefined
       : options?.since?.getTime() ??
         (lastReconciledTime != null && !Number.isNaN(lastReconciledTime)
           ? lastReconciledTime
           : undefined)
+  if (sinceTime != null && sinceTime > nowTime) {
+    sinceTime = undefined
+  }
 
   await db.transaction('rw', db.doses, async () => {
     const dosesToCreate: DoseRecord[] = []
