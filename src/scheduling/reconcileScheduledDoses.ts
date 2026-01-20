@@ -1,6 +1,7 @@
 import Dexie from 'dexie'
 import {
   db,
+  DEFAULT_TIMEZONE,
   generateId,
   getSettings,
   listSchedules,
@@ -49,7 +50,9 @@ export async function reconcileScheduledDoses(
         continue
       }
 
-      const fallbackTimezone = settings.defaultTimezone
+      const fallbackTimezone = isValidTimeZone(settings.defaultTimezone)
+        ? settings.defaultTimezone
+        : DEFAULT_TIMEZONE
       const rawTimezone = schedule.timezone || fallbackTimezone
       const timezone = isValidTimeZone(rawTimezone)
         ? rawTimezone
