@@ -106,20 +106,29 @@ export async function reconcileScheduledDoses(
             intervalDays,
             timezone,
           )
-          if (!nextOccurrence) {
+          if (
+            !nextOccurrence ||
+            nextOccurrence.getTime() <= occurrenceTime
+          ) {
             break
           }
           occurrenceTime = nextOccurrence.getTime()
         }
       }
 
-      const occurrencePrefix = `${schedule.id}_`
+      if (occurrenceTime > nowTime) {
+        continue
+      }
+
+      const occurrenceLowerBound = `${schedule.id}_${new Date(
+        occurrenceTime,
+      ).toISOString()}`
       const occurrenceUpperBound = `${schedule.id}_\uffff`
       const existingKeys = new Set(
         (
           await db.doses
             .where('occurrenceKey')
-            .between(occurrencePrefix, occurrenceUpperBound)
+            .between(occurrenceLowerBound, occurrenceUpperBound)
             .toArray()
         )
           .map((record) => record.occurrenceKey)
@@ -167,7 +176,10 @@ export async function reconcileScheduledDoses(
           intervalDays,
           timezone,
         )
-        if (!nextOccurrence) {
+        if (
+          !nextOccurrence ||
+          nextOccurrence.getTime() <= occurrenceTime
+        ) {
           break
         }
         occurrenceTime = nextOccurrence.getTime()

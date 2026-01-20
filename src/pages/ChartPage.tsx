@@ -603,20 +603,38 @@ function ChartPage() {
     return times.map((time) => new Date(time))
   }, [range.start, range.end, range.now, sampleMinutes])
 
+  const medicationAmounts = useMemo(() => {
+    const map = new Map<string, number[]>()
+    if (timePoints.length === 0) {
+      return map
+    }
+    for (const medication of medications) {
+      const dosesForMedication =
+        doseEventsByMedication.get(medication.id) ?? []
+      if (dosesForMedication.length === 0) {
+        continue
+      }
+      map.set(
+        medication.id,
+        timePoints.map((t) => totalAmountAtTime(dosesForMedication, t)),
+      )
+    }
+    return map
+  }, [timePoints, medications, doseEventsByMedication])
+
   const chartData = useMemo(() => {
     if (timePoints.length === 0) {
       return []
     }
 
     const nowTime = range.now.getTime()
-    return timePoints.map((t) => {
+    return timePoints.map((t, index) => {
       const point: Record<string, number | null> = { time: t.getTime() }
       let total = 0
       const isPast = t.getTime() <= nowTime
       for (const medication of medications) {
-        const dosesForMedication =
-          doseEventsByMedication.get(medication.id) ?? []
-        const amount = totalAmountAtTime(dosesForMedication, t)
+        const amounts = medicationAmounts.get(medication.id)
+        const amount = amounts ? amounts[index] : 0
         point[`${medication.id}_past`] = isPast ? amount : null
         point[`${medication.id}_future`] = isPast ? null : amount
         total += amount
@@ -625,7 +643,7 @@ function ChartPage() {
       point.total_future = isPast ? null : total
       return point
     })
-  }, [timePoints, medications, doseEventsByMedication, range.now])
+  }, [timePoints, medications, medicationAmounts, range.now])
 
   const visibleMedications = medications.filter((medication) =>
     visibleMedicationIds.includes(medication.id),
