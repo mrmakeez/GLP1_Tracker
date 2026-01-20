@@ -269,7 +269,10 @@ function ChartPage() {
   }, [medications])
 
   const reconcileAndRefreshDoses = useCallback(
-    async (targetTime: number, options?: { forceRefresh?: boolean }) => {
+    async (
+      targetTime: number,
+      options?: { forceRefresh?: boolean; sinceTime?: number },
+    ) => {
     if (reconcileInFlightRef.current) {
       return
     }
@@ -278,7 +281,12 @@ function ChartPage() {
     }
     reconcileInFlightRef.current = true
     try {
-      const result = await reconcileScheduledDoses(new Date(targetTime))
+      const result = await reconcileScheduledDoses(new Date(targetTime), {
+        since:
+          options?.sinceTime != null
+            ? new Date(options.sinceTime)
+            : undefined,
+      })
       lastReconciledAtRef.current = targetTime
       if (result.createdCount > 0 || options?.forceRefresh) {
         const refreshedDoses = await listDoses()
@@ -382,7 +390,9 @@ function ChartPage() {
       nextScheduledOccurrenceTime !== null &&
       nowTime >= nextScheduledOccurrenceTime
     ) {
-      void reconcileAndRefreshDoses(nowTime)
+      void reconcileAndRefreshDoses(nowTime, {
+        sinceTime: lastReconciledAtRef.current,
+      })
     }
   }, [nowTime, schedules, timezone, reconcileAndRefreshDoses])
 

@@ -6,17 +6,19 @@ import {
   listSchedules,
   type DoseRecord,
 } from '../db'
-import { addDaysInTimezone } from './timezone'
+import { addDaysInTimezone, getLocalDayIndex } from './timezone'
 
 export type ReconcileResult = { createdCount: number }
 
 export async function reconcileScheduledDoses(
   now: Date,
+  options?: { since?: Date },
 ): Promise<ReconcileResult> {
   const nowTime = now.getTime()
   if (Number.isNaN(nowTime)) {
     return { createdCount: 0 }
   }
+  const sinceTime = options?.since?.getTime()
 
   const [schedules, settings] = await Promise.all([
     listSchedules(),
@@ -45,6 +47,39 @@ export async function reconcileScheduledDoses(
 
       const timezone = schedule.timezone || settings.defaultTimezone
       let occurrenceTime = start.getTime()
+
+      if (
+        sinceTime != null &&
+        !Number.isNaN(sinceTime) &&
+        sinceTime > occurrenceTime
+      ) {
+        const startDay = getLocalDayIndex(start, timezone)
+        const sinceDay = getLocalDayIndex(new Date(sinceTime), timezone)
+        if (startDay == null || sinceDay == null) {
+          continue
+        }
+        const diffDays = sinceDay - startDay
+        const steps = Math.floor(diffDays / intervalDays)
+        const stepDays = steps * intervalDays
+        if (stepDays > 0) {
+          const stepped = addDaysInTimezone(start, stepDays, timezone)
+          if (!stepped) {
+            continue
+          }
+          occurrenceTime = stepped.getTime()
+        }
+        while (occurrenceTime <= sinceTime) {
+          const nextOccurrence = addDaysInTimezone(
+            new Date(occurrenceTime),
+            intervalDays,
+            timezone,
+          )
+          if (!nextOccurrence) {
+            break
+          }
+          occurrenceTime = nextOccurrence.getTime()
+        }
+      }
 
       while (occurrenceTime <= nowTime) {
         const occurrenceDatetime = new Date(occurrenceTime)
