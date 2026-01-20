@@ -36,6 +36,7 @@ import {
 } from '../pk/bateman'
 import {
   addDaysInTimezone,
+  addMonthsInTimezone,
   getLocalDayIndex,
   resolveTimezone,
 } from '../scheduling/timezone'
@@ -555,7 +556,8 @@ function ChartPage() {
       addDaysWithFallback(now, -lookbackDays, timezone, DEFAULT_TIMEZONE) ??
       addDays(now, -lookbackDays)
     const end = activeFutureOption.months
-      ? addMonths(now, activeFutureOption.months)
+      ? addMonthsInTimezone(now, activeFutureOption.months, timezone) ??
+        addMonths(now, activeFutureOption.months)
       : addDaysWithFallback(
           now,
           activeFutureOption.days ?? 0,
