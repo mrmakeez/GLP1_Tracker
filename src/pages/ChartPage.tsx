@@ -38,6 +38,7 @@ import {
 import {
   addDaysInTimezone,
   getLocalDayIndex,
+  resolveTimezone,
 } from '../scheduling/timezone'
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000
@@ -54,7 +55,7 @@ const FUTURE_OPTIONS = [
   { label: '7d', value: '7d', days: 7 },
   { label: '10d', value: '10d', days: 10 },
   { label: '30d', value: '30d', days: 30 },
-  { label: '4mo', value: '4mo', months: 4 },
+  { label: '4mo', value: '4mo', days: 120, months: 4 },
 ]
 
 const COLORS = [
@@ -74,11 +75,27 @@ const addMonths = (date: Date, months: number) => {
   return next
 }
 
+const formatterCache = new Map<string, Intl.DateTimeFormat>()
+
+const getFormatter = (
+  locale: string,
+  options: Intl.DateTimeFormatOptions,
+) => {
+  const key = `${locale}:${JSON.stringify(options)}`
+  const cached = formatterCache.get(key)
+  if (cached) {
+    return cached
+  }
+  const formatter = new Intl.DateTimeFormat(locale, options)
+  formatterCache.set(key, formatter)
+  return formatter
+}
+
 const formatDateTime = (date: Date, timezone: string) => {
   if (Number.isNaN(date.getTime())) {
     return ''
   }
-  return new Intl.DateTimeFormat('en-NZ', {
+  return getFormatter('en-NZ', {
     dateStyle: 'medium',
     timeStyle: 'short',
     timeZone: timezone,
@@ -148,7 +165,10 @@ const buildFutureScheduleDoses = (
     return []
   }
 
-  const timezone = schedule.timezone || defaultTimezone
+  const timezone = resolveTimezone(
+    schedule.timezone || defaultTimezone,
+    defaultTimezone,
+  )
   const nowTime = now.getTime()
   const endTime = end.getTime()
   let nextDate = new Date(start.getTime())
@@ -233,7 +253,10 @@ const getNextScheduledOccurrenceTime = (
     if (!intervalDays || intervalDays <= 0) {
       continue
     }
-    const timezone = schedule.timezone || defaultTimezone
+    const timezone = resolveTimezone(
+      schedule.timezone || defaultTimezone,
+      defaultTimezone,
+    )
     let candidateDate = new Date(startTime)
     if (startTime < sinceTime) {
       let startDay = getLocalDayIndex(candidateDate, timezone)
@@ -313,7 +336,10 @@ function ChartPage() {
     new Map(),
   )
 
-  const timezone = settings?.defaultTimezone ?? DEFAULT_TIMEZONE
+  const timezone = resolveTimezone(
+    settings?.defaultTimezone ?? DEFAULT_TIMEZONE,
+    DEFAULT_TIMEZONE,
+  )
   const sampleMinutes = settings?.chartSampleMinutes ?? 60
 
   const medicationById = useMemo(() => {
@@ -719,7 +745,7 @@ function ChartPage() {
                   type="number"
                   domain={['dataMin', 'dataMax']}
                   tickFormatter={(value: number) =>
-                    new Intl.DateTimeFormat('en-NZ', {
+                    getFormatter('en-NZ', {
                       month: 'short',
                       day: 'numeric',
                     }).format(new Date(value))

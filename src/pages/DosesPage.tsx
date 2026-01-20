@@ -19,6 +19,7 @@ import {
   type SettingsRecord,
 } from '../db'
 import { reconcileScheduledDoses } from '../scheduling/reconcileScheduledDoses'
+import { resolveTimezone } from '../scheduling/timezone'
 
 type DoseFormState = {
   medicationId: string
@@ -50,12 +51,28 @@ const defaultScheduleForm: ScheduleFormState = {
   startDatetimeLocal: '',
 }
 
+const formatterCache = new Map<string, Intl.DateTimeFormat>()
+
+const getFormatter = (
+  locale: string,
+  options: Intl.DateTimeFormatOptions,
+) => {
+  const key = `${locale}:${JSON.stringify(options)}`
+  const cached = formatterCache.get(key)
+  if (cached) {
+    return cached
+  }
+  const formatter = new Intl.DateTimeFormat(locale, options)
+  formatterCache.set(key, formatter)
+  return formatter
+}
+
 const formatDateTime = (isoString: string, timezone: string) => {
   const date = new Date(isoString)
   if (Number.isNaN(date.getTime())) {
     return isoString
   }
-  return new Intl.DateTimeFormat('en-NZ', {
+  return getFormatter('en-NZ', {
     dateStyle: 'medium',
     timeStyle: 'short',
     timeZone: timezone,
@@ -67,7 +84,7 @@ const toLocalInputValue = (isoString: string, timezone: string) => {
   if (Number.isNaN(date.getTime())) {
     return ''
   }
-  const formatter = new Intl.DateTimeFormat('en-CA', {
+  const formatter = getFormatter('en-CA', {
     timeZone: timezone,
     year: 'numeric',
     month: '2-digit',
@@ -92,7 +109,7 @@ const toLocalInputValue = (isoString: string, timezone: string) => {
 }
 
 const getTimezoneOffsetMinutes = (timezone: string, date: Date) => {
-  const formatter = new Intl.DateTimeFormat('en-US', {
+  const formatter = getFormatter('en-US', {
     timeZone: timezone,
     year: 'numeric',
     month: '2-digit',
@@ -166,7 +183,10 @@ function DosesPage() {
     null,
   )
 
-  const timezone = settings?.defaultTimezone ?? DEFAULT_TIMEZONE
+  const timezone = resolveTimezone(
+    settings?.defaultTimezone ?? DEFAULT_TIMEZONE,
+    DEFAULT_TIMEZONE,
+  )
 
   const medicationById = useMemo(() => {
     return new Map(medications.map((medication) => [medication.id, medication]))
@@ -254,7 +274,10 @@ function DosesPage() {
     const existingDose = editingDoseId
       ? doses.find((dose) => dose.id === editingDoseId)
       : undefined
-    const resolvedTimezone = existingDose?.timezone ?? timezone
+    const resolvedTimezone = resolveTimezone(
+      existingDose?.timezone ?? timezone,
+      timezone,
+    )
     if (!doseForm.medicationId) {
       errors.medicationId = 'Select a medication.'
     }
@@ -320,7 +343,10 @@ function DosesPage() {
     const existingSchedule = editingScheduleId
       ? schedules.find((schedule) => schedule.id === editingScheduleId)
       : undefined
-    const resolvedTimezone = existingSchedule?.timezone ?? timezone
+    const resolvedTimezone = resolveTimezone(
+      existingSchedule?.timezone ?? timezone,
+      timezone,
+    )
     if (!scheduleForm.medicationId) {
       errors.medicationId = 'Select a medication.'
     }
@@ -733,7 +759,7 @@ function DosesPage() {
                       <td className="px-4 py-3">
                         {formatDateTime(
                           row.datetimeIso,
-                          row.timezone ?? timezone,
+                          resolveTimezone(row.timezone ?? timezone, timezone),
                         )}
                       </td>
                       <td className="px-4 py-3 text-slate-400">
@@ -776,7 +802,10 @@ function DosesPage() {
                                 doseMg: String(row.doseMg),
                                 datetimeLocal: toLocalInputValue(
                                   row.datetimeIso,
-                                  row.timezone ?? timezone,
+                                  resolveTimezone(
+                                    row.timezone ?? timezone,
+                                    timezone,
+                                  ),
                                 ),
                               })
                               setDoseErrors({})
@@ -860,7 +889,10 @@ function DosesPage() {
                       <td className="px-4 py-3">
                         {formatDateTime(
                           schedule.startDatetimeIso,
-                          schedule.timezone ?? timezone,
+                          resolveTimezone(
+                            schedule.timezone ?? timezone,
+                            timezone,
+                          ),
                         )}
                       </td>
                       <td className="px-4 py-3">
@@ -881,7 +913,10 @@ function DosesPage() {
                                 intervalDays: String(schedule.interval),
                                 startDatetimeLocal: toLocalInputValue(
                                   schedule.startDatetimeIso,
-                                  schedule.timezone ?? timezone,
+                                  resolveTimezone(
+                                    schedule.timezone ?? timezone,
+                                    timezone,
+                                  ),
                                 ),
                               })
                               setScheduleErrors({})

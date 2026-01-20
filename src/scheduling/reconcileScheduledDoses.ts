@@ -1,12 +1,17 @@
 import Dexie from 'dexie'
 import {
   db,
+  DEFAULT_TIMEZONE,
   generateId,
   getSettings,
   listSchedules,
   type DoseRecord,
 } from '../db'
-import { addDaysInTimezone, getLocalDayIndex } from './timezone'
+import {
+  addDaysInTimezone,
+  getLocalDayIndex,
+  resolveTimezone,
+} from './timezone'
 
 export type ReconcileResult = { createdCount: number }
 
@@ -26,9 +31,29 @@ export async function reconcileScheduledDoses(
   ])
 
   let createdCount = 0
+  const occurrenceBatchSize = 250
+  const bulkAddThreshold = 500
 
   await db.transaction('rw', db.doses, async () => {
     const dosesToCreate: DoseRecord[] = []
+    const flushDoses = async () => {
+      if (dosesToCreate.length === 0) {
+        return
+      }
+      try {
+        await db.doses.bulkAdd(dosesToCreate)
+        createdCount += dosesToCreate.length
+      } catch (error) {
+        if (error instanceof Dexie.BulkError) {
+          createdCount +=
+            dosesToCreate.length - error.failures.length
+        } else {
+          throw error
+        }
+      } finally {
+        dosesToCreate.length = 0
+      }
+    }
 
     for (const schedule of schedules) {
       if (!schedule.enabled) {
@@ -45,7 +70,14 @@ export async function reconcileScheduledDoses(
         continue
       }
 
-      const timezone = schedule.timezone || settings.defaultTimezone
+      const fallbackTimezone = resolveTimezone(
+        settings.defaultTimezone,
+        DEFAULT_TIMEZONE,
+      )
+      const timezone = resolveTimezone(
+        schedule.timezone || fallbackTimezone,
+        fallbackTimezone,
+      )
       let occurrenceTime = start.getTime()
 
       if (
@@ -81,31 +113,55 @@ export async function reconcileScheduledDoses(
         }
       }
 
+      const occurrencePrefix = `${schedule.id}_`
+      const occurrenceUpperBound = `${schedule.id}_\uffff`
+      const existingKeys = new Set(
+        (
+          await db.doses
+            .where('occurrenceKey')
+            .between(occurrencePrefix, occurrenceUpperBound)
+            .toArray()
+        )
+          .map((record) => record.occurrenceKey)
+          .filter(
+            (occurrenceKey): occurrenceKey is string =>
+              typeof occurrenceKey === 'string',
+          ),
+      )
+
+      let occurrences: Array<{
+        datetime: Date
+        occurrenceKey: string
+      }> = []
       while (occurrenceTime <= nowTime) {
         const occurrenceDatetime = new Date(occurrenceTime)
         const occurrenceKey = `${schedule.id}_${occurrenceDatetime.toISOString()}`
-        const existing = await db.doses
-          .where('occurrenceKey')
-          .equals(occurrenceKey)
-          .first()
-
-        if (!existing) {
-          const timestamp = new Date().toISOString()
-          dosesToCreate.push({
-            id: generateId(),
-            medicationId: schedule.medicationId,
-            doseMg: schedule.doseMg,
-            datetimeIso: occurrenceDatetime.toISOString(),
-            timezone,
-            source: 'scheduled',
-            scheduleId: schedule.id,
-            occurrenceKey,
-            status: 'assumed_taken',
-            createdAt: timestamp,
-            updatedAt: timestamp,
-          })
+        occurrences.push({ datetime: occurrenceDatetime, occurrenceKey })
+        if (occurrences.length >= occurrenceBatchSize) {
+          for (const occurrence of occurrences) {
+            if (existingKeys.has(occurrence.occurrenceKey)) {
+              continue
+            }
+            const timestamp = new Date().toISOString()
+            dosesToCreate.push({
+              id: generateId(),
+              medicationId: schedule.medicationId,
+              doseMg: schedule.doseMg,
+              datetimeIso: occurrence.datetime.toISOString(),
+              timezone,
+              source: 'scheduled',
+              scheduleId: schedule.id,
+              occurrenceKey: occurrence.occurrenceKey,
+              status: 'assumed_taken',
+              createdAt: timestamp,
+              updatedAt: timestamp,
+            })
+          }
+          if (dosesToCreate.length >= bulkAddThreshold) {
+            await flushDoses()
+          }
+          occurrences = []
         }
-
         const nextOccurrence = addDaysInTimezone(
           occurrenceDatetime,
           intervalDays,
@@ -116,21 +172,32 @@ export async function reconcileScheduledDoses(
         }
         occurrenceTime = nextOccurrence.getTime()
       }
-    }
 
-    if (dosesToCreate.length > 0) {
-      try {
-        await db.doses.bulkAdd(dosesToCreate)
-        createdCount = dosesToCreate.length
-      } catch (error) {
-        if (error instanceof Dexie.BulkError) {
-          createdCount =
-            dosesToCreate.length - error.failures.length
-        } else {
-          throw error
+      for (const occurrence of occurrences) {
+        if (existingKeys.has(occurrence.occurrenceKey)) {
+          continue
         }
+        const timestamp = new Date().toISOString()
+        dosesToCreate.push({
+          id: generateId(),
+          medicationId: schedule.medicationId,
+          doseMg: schedule.doseMg,
+          datetimeIso: occurrence.datetime.toISOString(),
+          timezone,
+          source: 'scheduled',
+          scheduleId: schedule.id,
+          occurrenceKey: occurrence.occurrenceKey,
+          status: 'assumed_taken',
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        })
+      }
+      if (dosesToCreate.length >= bulkAddThreshold) {
+        await flushDoses()
       }
     }
+
+    await flushDoses()
   })
 
   return { createdCount }
