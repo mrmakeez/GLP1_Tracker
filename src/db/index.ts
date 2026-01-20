@@ -289,27 +289,37 @@ export const validateImportPayload = (payload: unknown): ExportPayload => {
   }
 
   const data = payload.data as Record<string, unknown>
-  const tables = ['medications', 'doses', 'schedules', 'settings'] as const
+  const medications = data.medications
+  const doses = data.doses
+  const schedules = data.schedules
+  const settings = data.settings
 
-  for (const table of tables) {
-    if (!Array.isArray(data[table])) {
-      throw new Error(`Missing ${table} table.`)
-    }
+  if (!Array.isArray(medications)) {
+    throw new Error('Missing medications table.')
+  }
+  if (!Array.isArray(doses)) {
+    throw new Error('Missing doses table.')
+  }
+  if (!Array.isArray(schedules)) {
+    throw new Error('Missing schedules table.')
+  }
+  if (!Array.isArray(settings)) {
+    throw new Error('Missing settings table.')
   }
 
-  if (!data.medications.every(validateMedication)) {
+  if (!medications.every(validateMedication)) {
     throw new Error('Invalid medication records.')
   }
 
-  if (!data.doses.every(validateDose)) {
+  if (!doses.every(validateDose)) {
     throw new Error('Invalid dose records.')
   }
 
-  if (!data.schedules.every(validateSchedule)) {
+  if (!schedules.every(validateSchedule)) {
     throw new Error('Invalid schedule records.')
   }
 
-  if (!data.settings.every(validateSettings)) {
+  if (!settings.every(validateSettings)) {
     throw new Error('Invalid settings records.')
   }
 
