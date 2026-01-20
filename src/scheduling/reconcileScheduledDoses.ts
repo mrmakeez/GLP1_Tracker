@@ -106,7 +106,10 @@ export async function reconcileScheduledDoses(
             intervalDays,
             timezone,
           )
-          if (!nextOccurrence) {
+          if (
+            !nextOccurrence ||
+            nextOccurrence.getTime() <= occurrenceTime
+          ) {
             break
           }
           occurrenceTime = nextOccurrence.getTime()
@@ -173,7 +176,10 @@ export async function reconcileScheduledDoses(
           intervalDays,
           timezone,
         )
-        if (!nextOccurrence) {
+        if (
+          !nextOccurrence ||
+          nextOccurrence.getTime() <= occurrenceTime
+        ) {
           break
         }
         occurrenceTime = nextOccurrence.getTime()
