@@ -201,7 +201,6 @@ export async function reconcileScheduledDoses(
         scheduleUpdates.map((update) =>
           db.schedules.update(update.id, {
             lastMaterializedAt: update.lastMaterializedAt,
-            updatedAt: new Date().toISOString(),
           }),
         ),
       )
