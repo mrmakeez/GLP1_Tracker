@@ -75,11 +75,27 @@ const addMonths = (date: Date, months: number) => {
   return next
 }
 
+const formatterCache = new Map<string, Intl.DateTimeFormat>()
+
+const getFormatter = (
+  locale: string,
+  options: Intl.DateTimeFormatOptions,
+) => {
+  const key = `${locale}:${JSON.stringify(options)}`
+  const cached = formatterCache.get(key)
+  if (cached) {
+    return cached
+  }
+  const formatter = new Intl.DateTimeFormat(locale, options)
+  formatterCache.set(key, formatter)
+  return formatter
+}
+
 const formatDateTime = (date: Date, timezone: string) => {
   if (Number.isNaN(date.getTime())) {
     return ''
   }
-  return new Intl.DateTimeFormat('en-NZ', {
+  return getFormatter('en-NZ', {
     dateStyle: 'medium',
     timeStyle: 'short',
     timeZone: timezone,
@@ -729,7 +745,7 @@ function ChartPage() {
                   type="number"
                   domain={['dataMin', 'dataMax']}
                   tickFormatter={(value: number) =>
-                    new Intl.DateTimeFormat('en-NZ', {
+                    getFormatter('en-NZ', {
                       month: 'short',
                       day: 'numeric',
                     }).format(new Date(value))

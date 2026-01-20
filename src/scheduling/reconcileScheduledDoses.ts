@@ -113,49 +113,21 @@ export async function reconcileScheduledDoses(
         }
       }
 
-      const processOccurrences = async (
-        occurrences: Array<{ datetime: Date; occurrenceKey: string }>,
-      ) => {
-        if (occurrences.length === 0) {
-          return
-        }
-        const existing = await db.doses
-          .where('occurrenceKey')
-          .anyOf(occurrences.map((occurrence) => occurrence.occurrenceKey))
-          .toArray()
-        const existingKeys = new Set(
-          existing
-            .map((record) => record.occurrenceKey)
-            .filter(
-              (occurrenceKey): occurrenceKey is string =>
-                typeof occurrenceKey === 'string',
-            ),
+      const occurrencePrefix = `${schedule.id}_`
+      const occurrenceUpperBound = `${schedule.id}_\uffff`
+      const existingKeys = new Set(
+        (
+          await db.doses
+            .where('occurrenceKey')
+            .between(occurrencePrefix, occurrenceUpperBound)
+            .toArray()
         )
-
-        for (const occurrence of occurrences) {
-          if (existingKeys.has(occurrence.occurrenceKey)) {
-            continue
-          }
-          const timestamp = new Date().toISOString()
-          dosesToCreate.push({
-            id: generateId(),
-            medicationId: schedule.medicationId,
-            doseMg: schedule.doseMg,
-            datetimeIso: occurrence.datetime.toISOString(),
-            timezone,
-            source: 'scheduled',
-            scheduleId: schedule.id,
-            occurrenceKey: occurrence.occurrenceKey,
-            status: 'assumed_taken',
-            createdAt: timestamp,
-            updatedAt: timestamp,
-          })
-        }
-
-        if (dosesToCreate.length >= bulkAddThreshold) {
-          await flushDoses()
-        }
-      }
+          .map((record) => record.occurrenceKey)
+          .filter(
+            (occurrenceKey): occurrenceKey is string =>
+              typeof occurrenceKey === 'string',
+          ),
+      )
 
       let occurrences: Array<{
         datetime: Date
@@ -166,7 +138,28 @@ export async function reconcileScheduledDoses(
         const occurrenceKey = `${schedule.id}_${occurrenceDatetime.toISOString()}`
         occurrences.push({ datetime: occurrenceDatetime, occurrenceKey })
         if (occurrences.length >= occurrenceBatchSize) {
-          await processOccurrences(occurrences)
+          for (const occurrence of occurrences) {
+            if (existingKeys.has(occurrence.occurrenceKey)) {
+              continue
+            }
+            const timestamp = new Date().toISOString()
+            dosesToCreate.push({
+              id: generateId(),
+              medicationId: schedule.medicationId,
+              doseMg: schedule.doseMg,
+              datetimeIso: occurrence.datetime.toISOString(),
+              timezone,
+              source: 'scheduled',
+              scheduleId: schedule.id,
+              occurrenceKey: occurrence.occurrenceKey,
+              status: 'assumed_taken',
+              createdAt: timestamp,
+              updatedAt: timestamp,
+            })
+          }
+          if (dosesToCreate.length >= bulkAddThreshold) {
+            await flushDoses()
+          }
           occurrences = []
         }
         const nextOccurrence = addDaysInTimezone(
@@ -180,7 +173,28 @@ export async function reconcileScheduledDoses(
         occurrenceTime = nextOccurrence.getTime()
       }
 
-      await processOccurrences(occurrences)
+      for (const occurrence of occurrences) {
+        if (existingKeys.has(occurrence.occurrenceKey)) {
+          continue
+        }
+        const timestamp = new Date().toISOString()
+        dosesToCreate.push({
+          id: generateId(),
+          medicationId: schedule.medicationId,
+          doseMg: schedule.doseMg,
+          datetimeIso: occurrence.datetime.toISOString(),
+          timezone,
+          source: 'scheduled',
+          scheduleId: schedule.id,
+          occurrenceKey: occurrence.occurrenceKey,
+          status: 'assumed_taken',
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        })
+      }
+      if (dosesToCreate.length >= bulkAddThreshold) {
+        await flushDoses()
+      }
     }
 
     await flushDoses()

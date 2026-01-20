@@ -51,12 +51,28 @@ const defaultScheduleForm: ScheduleFormState = {
   startDatetimeLocal: '',
 }
 
+const formatterCache = new Map<string, Intl.DateTimeFormat>()
+
+const getFormatter = (
+  locale: string,
+  options: Intl.DateTimeFormatOptions,
+) => {
+  const key = `${locale}:${JSON.stringify(options)}`
+  const cached = formatterCache.get(key)
+  if (cached) {
+    return cached
+  }
+  const formatter = new Intl.DateTimeFormat(locale, options)
+  formatterCache.set(key, formatter)
+  return formatter
+}
+
 const formatDateTime = (isoString: string, timezone: string) => {
   const date = new Date(isoString)
   if (Number.isNaN(date.getTime())) {
     return isoString
   }
-  return new Intl.DateTimeFormat('en-NZ', {
+  return getFormatter('en-NZ', {
     dateStyle: 'medium',
     timeStyle: 'short',
     timeZone: timezone,
@@ -68,7 +84,7 @@ const toLocalInputValue = (isoString: string, timezone: string) => {
   if (Number.isNaN(date.getTime())) {
     return ''
   }
-  const formatter = new Intl.DateTimeFormat('en-CA', {
+  const formatter = getFormatter('en-CA', {
     timeZone: timezone,
     year: 'numeric',
     month: '2-digit',
@@ -93,7 +109,7 @@ const toLocalInputValue = (isoString: string, timezone: string) => {
 }
 
 const getTimezoneOffsetMinutes = (timezone: string, date: Date) => {
-  const formatter = new Intl.DateTimeFormat('en-US', {
+  const formatter = getFormatter('en-US', {
     timeZone: timezone,
     year: 'numeric',
     month: '2-digit',

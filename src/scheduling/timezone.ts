@@ -25,7 +25,14 @@ export const resolveTimezone = (
   if (timezone && isValidTimeZone(timezone)) {
     return timezone
   }
-  return isValidTimeZone(fallback) ? fallback : 'UTC'
+  if (isValidTimeZone(fallback)) {
+    return fallback
+  }
+  console.warn('Invalid timezones provided; falling back to UTC.', {
+    timezone,
+    fallback,
+  })
+  return 'UTC'
 }
 
 const getDatePartsInZone = (
