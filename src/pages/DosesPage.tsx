@@ -1,4 +1,10 @@
-import { type FormEvent, useEffect, useMemo, useState } from 'react'
+import {
+  type FormEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import {
   DEFAULT_TIMEZONE,
   addDose,
@@ -182,6 +188,7 @@ function DosesPage() {
   const [editingScheduleId, setEditingScheduleId] = useState<string | null>(
     null,
   )
+  const lastReconciledAtRef = useRef<number | null>(null)
 
   const timezone = resolveTimezone(
     settings?.defaultTimezone ?? DEFAULT_TIMEZONE,
@@ -212,8 +219,20 @@ function DosesPage() {
     [schedules],
   )
 
-  const loadData = async () => {
-    await reconcileScheduledDoses(new Date())
+  const loadData = async (options?: { forceFull?: boolean }) => {
+    const now = Date.now()
+    const sinceTime = options?.forceFull
+      ? undefined
+      : lastReconciledAtRef.current ?? undefined
+    try {
+      await reconcileScheduledDoses(
+        new Date(now),
+        sinceTime != null ? { since: new Date(sinceTime) } : undefined,
+      )
+      lastReconciledAtRef.current = now
+    } catch (error) {
+      console.error('Failed to reconcile scheduled doses.', error)
+    }
     const [loadedMedications, loadedDoses, loadedSchedules, loadedSettings] =
       await Promise.all([
         listMedications(),
@@ -424,7 +443,7 @@ function DosesPage() {
     }
 
     resetScheduleForm()
-    await loadData()
+    await loadData({ forceFull: true })
   }
 
   return (
@@ -952,7 +971,7 @@ function DosesPage() {
                                 return
                               }
                               await deleteSchedule(schedule.id)
-                              await loadData()
+                              await loadData({ forceFull: true })
                             }}
                           >
                             Delete

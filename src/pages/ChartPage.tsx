@@ -603,12 +603,20 @@ function ChartPage() {
     return times.map((time) => new Date(time))
   }, [range.start, range.end, range.now, sampleMinutes])
 
+  const visibleMedications = useMemo(
+    () =>
+      medications.filter((medication) =>
+        visibleMedicationIds.includes(medication.id),
+      ),
+    [medications, visibleMedicationIds],
+  )
+
   const medicationAmounts = useMemo(() => {
     const map = new Map<string, number[]>()
     if (timePoints.length === 0) {
       return map
     }
-    for (const medication of medications) {
+    for (const medication of visibleMedications) {
       const dosesForMedication =
         doseEventsByMedication.get(medication.id) ?? []
       if (dosesForMedication.length === 0) {
@@ -620,7 +628,23 @@ function ChartPage() {
       )
     }
     return map
-  }, [timePoints, medications, doseEventsByMedication])
+  }, [timePoints, visibleMedications, doseEventsByMedication])
+
+  const allDoseEvents = useMemo(
+    () => Array.from(doseEventsByMedication.values()).flat(),
+    [doseEventsByMedication],
+  )
+
+  const totalAmounts = useMemo(() => {
+    if (!showTotal || timePoints.length === 0) {
+      return []
+    }
+    const allDoses = allDoseEvents
+    if (allDoses.length === 0) {
+      return []
+    }
+    return timePoints.map((t) => totalAmountAtTime(allDoses, t))
+  }, [timePoints, allDoseEvents, showTotal])
 
   const chartData = useMemo(() => {
     if (timePoints.length === 0) {
@@ -630,24 +654,26 @@ function ChartPage() {
     const nowTime = range.now.getTime()
     return timePoints.map((t, index) => {
       const point: Record<string, number | null> = { time: t.getTime() }
-      let total = 0
       const isPast = t.getTime() <= nowTime
-      for (const medication of medications) {
+      for (const medication of visibleMedications) {
         const amounts = medicationAmounts.get(medication.id)
         const amount = amounts ? amounts[index] : 0
         point[`${medication.id}_past`] = isPast ? amount : null
         point[`${medication.id}_future`] = isPast ? null : amount
-        total += amount
       }
-      point.total_past = isPast ? total : null
-      point.total_future = isPast ? null : total
+      const totalAmount = showTotal ? totalAmounts[index] ?? 0 : 0
+      point.total_past = showTotal ? (isPast ? totalAmount : null) : null
+      point.total_future = showTotal ? (isPast ? null : totalAmount) : null
       return point
     })
-  }, [timePoints, medications, medicationAmounts, range.now])
-
-  const visibleMedications = medications.filter((medication) =>
-    visibleMedicationIds.includes(medication.id),
-  )
+  }, [
+    timePoints,
+    visibleMedications,
+    medicationAmounts,
+    range.now,
+    showTotal,
+    totalAmounts,
+  ])
 
   return (
     <section className="space-y-4">

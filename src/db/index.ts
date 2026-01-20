@@ -271,12 +271,79 @@ const validateSettings = (
   isNonNegativeNumber(value.defaultLookbackDays) &&
   isNonNegativeNumber(value.defaultFutureDays)
 
+const normalizeDoseSource = (dose: DoseRecord): DoseRecord => {
+  const hasScheduleMetadata =
+    typeof dose.scheduleId === 'string' ||
+    typeof dose.occurrenceKey === 'string'
+  const source = dose.source ?? (hasScheduleMetadata ? 'scheduled' : 'manual')
+  const status =
+    source === 'scheduled' && dose.status == null
+      ? 'assumed_taken'
+      : dose.status
+  return {
+    ...dose,
+    source,
+    status,
+  }
+}
+
+const coerceTimezone = (value: unknown) => {
+  if (!isRecord(value)) {
+    return value
+  }
+  if (typeof value.timezone === 'string' && value.timezone.length > 0) {
+    return value
+  }
+  return { ...value, timezone: DEFAULT_TIMEZONE }
+}
+
+const coerceSettingsTimezone = (value: unknown) => {
+  if (!isRecord(value)) {
+    return value
+  }
+  if (
+    typeof value.defaultTimezone === 'string' &&
+    value.defaultTimezone.length > 0
+  ) {
+    return value
+  }
+  return { ...value, defaultTimezone: DEFAULT_TIMEZONE }
+}
+
+const normalizeImportedDose = (value: unknown) => {
+  if (!isRecord(value)) {
+    return value
+  }
+  const coerced = coerceTimezone(value)
+  if (!isRecord(coerced)) {
+    return coerced
+  }
+  if (coerced.source !== 'scheduled') {
+    return coerced
+  }
+  const hasScheduleId = typeof coerced.scheduleId === 'string'
+  const hasOccurrenceKey = typeof coerced.occurrenceKey === 'string'
+  if (hasScheduleId && hasOccurrenceKey) {
+    return coerced
+  }
+  return {
+    ...coerced,
+    source: undefined,
+    scheduleId: hasScheduleId ? coerced.scheduleId : undefined,
+    occurrenceKey: hasOccurrenceKey ? coerced.occurrenceKey : undefined,
+    status: undefined,
+  }
+}
+
 export const validateImportPayload = (payload: unknown): ExportPayload => {
   if (!isRecord(payload)) {
     throw new Error('Invalid import payload.')
   }
 
-  if (payload.schemaVersion !== DB_SCHEMA_VERSION) {
+  if (
+    typeof payload.schemaVersion !== 'number' ||
+    payload.schemaVersion > DB_SCHEMA_VERSION
+  ) {
     throw new Error('Unsupported schema version.')
   }
 
@@ -307,23 +374,50 @@ export const validateImportPayload = (payload: unknown): ExportPayload => {
     throw new Error('Missing settings table.')
   }
 
-  if (!medications.every(validateMedication)) {
+  const schemaVersion = payload.schemaVersion
+  const normalizedMedications = medications
+  const normalizedDoses =
+    schemaVersion < DB_SCHEMA_VERSION
+      ? doses.map(normalizeImportedDose)
+      : doses
+  const normalizedSchedules =
+    schemaVersion < DB_SCHEMA_VERSION
+      ? schedules.map(coerceTimezone)
+      : schedules
+  const normalizedSettings =
+    schemaVersion < DB_SCHEMA_VERSION
+      ? settings.map(coerceSettingsTimezone)
+      : settings
+
+  if (!normalizedMedications.every(validateMedication)) {
     throw new Error('Invalid medication records.')
   }
 
-  if (!doses.every(validateDose)) {
+  if (!normalizedDoses.every(validateDose)) {
     throw new Error('Invalid dose records.')
   }
 
-  if (!schedules.every(validateSchedule)) {
+  if (!normalizedSchedules.every(validateSchedule)) {
     throw new Error('Invalid schedule records.')
   }
 
-  if (!settings.every(validateSettings)) {
+  if (!normalizedSettings.every(validateSettings)) {
     throw new Error('Invalid settings records.')
   }
 
-  return payload as ExportPayload
+  const normalizedDosesWithSource = normalizedDoses.map((dose) =>
+    normalizeDoseSource(dose as DoseRecord),
+  )
+
+  return {
+    ...(payload as ExportPayload),
+    data: {
+      medications: normalizedMedications as MedicationRecord[],
+      doses: normalizedDosesWithSource,
+      schedules: normalizedSchedules as ScheduleRecord[],
+      settings: normalizedSettings as SettingsRecord[],
+    },
+  }
 }
 
 export const importDatabaseReplaceAll = async (
