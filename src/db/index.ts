@@ -319,7 +319,7 @@ const validateSettings = (
 
 const normalizeDoseSource = (dose: DoseRecord): DoseRecord => {
   const hasScheduleMetadata =
-    typeof dose.scheduleId === 'string' ||
+    typeof dose.scheduleId === 'string' &&
     typeof dose.occurrenceKey === 'string'
   const source = dose.source ?? (hasScheduleMetadata ? 'scheduled' : 'manual')
   const status =
@@ -329,7 +329,9 @@ const normalizeDoseSource = (dose: DoseRecord): DoseRecord => {
   return {
     ...dose,
     source,
-    status,
+    status: source === 'scheduled' ? status : undefined,
+    scheduleId: source === 'scheduled' ? dose.scheduleId : undefined,
+    occurrenceKey: source === 'scheduled' ? dose.occurrenceKey : undefined,
   }
 }
 
