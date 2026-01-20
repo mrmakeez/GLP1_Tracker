@@ -68,7 +68,7 @@ export async function reconcileScheduledDoses(
           }
           occurrenceTime = stepped.getTime()
         }
-        while (occurrenceTime <= sinceTime) {
+        while (occurrenceTime < sinceTime) {
           const nextOccurrence = addDaysInTimezone(
             new Date(occurrenceTime),
             intervalDays,
