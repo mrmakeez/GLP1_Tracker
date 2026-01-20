@@ -186,6 +186,80 @@ export const exportDatabase = async (): Promise<ExportPayload> => {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
+const isString = (value: unknown): value is string =>
+  typeof value === 'string'
+
+const isNumber = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value)
+
+const isBoolean = (value: unknown): value is boolean =>
+  typeof value === 'boolean'
+
+const isDoseSource = (value: unknown): value is DoseSource =>
+  value === 'manual' || value === 'scheduled'
+
+const isScheduledStatus = (
+  value: unknown,
+): value is ScheduledDoseStatus =>
+  value === 'assumed_taken' ||
+  value === 'confirmed_taken' ||
+  value === 'skipped'
+
+const isScheduleFrequency = (
+  value: unknown,
+): value is ScheduleFrequency =>
+  value === 'daily' || value === 'weekly' || value === 'custom'
+
+const validateMedication = (value: unknown): value is MedicationRecord =>
+  isRecord(value) &&
+  isString(value.id) &&
+  isString(value.name) &&
+  isNumber(value.kaPerHour) &&
+  isNumber(value.kePerHour) &&
+  isNumber(value.scale) &&
+  isString(value.notes) &&
+  isString(value.createdAt) &&
+  isString(value.updatedAt)
+
+const validateDose = (value: unknown): value is DoseRecord =>
+  isRecord(value) &&
+  isString(value.id) &&
+  isString(value.medicationId) &&
+  isNumber(value.doseMg) &&
+  isString(value.datetimeIso) &&
+  isString(value.timezone) &&
+  isString(value.createdAt) &&
+  isString(value.updatedAt) &&
+  (value.source == null || isDoseSource(value.source)) &&
+  (value.scheduleId == null || isString(value.scheduleId)) &&
+  (value.occurrenceKey == null || isString(value.occurrenceKey)) &&
+  (value.status == null || isScheduledStatus(value.status))
+
+const validateSchedule = (
+  value: unknown,
+): value is ScheduleRecord =>
+  isRecord(value) &&
+  isString(value.id) &&
+  isString(value.medicationId) &&
+  isString(value.startDatetimeIso) &&
+  isString(value.timezone) &&
+  isNumber(value.doseMg) &&
+  isScheduleFrequency(value.frequency) &&
+  isNumber(value.interval) &&
+  isBoolean(value.enabled) &&
+  isString(value.createdAt) &&
+  isString(value.updatedAt)
+
+const validateSettings = (
+  value: unknown,
+): value is SettingsRecord =>
+  isRecord(value) &&
+  value.id === 'singleton' &&
+  isString(value.defaultTimezone) &&
+  isNumber(value.chartSampleMinutes) &&
+  isNumber(value.defaultLookbackDays) &&
+  isNumber(value.defaultFutureDays)
+
 export const validateImportPayload = (payload: unknown): ExportPayload => {
   if (!isRecord(payload)) {
     throw new Error('Invalid import payload.')
@@ -209,6 +283,22 @@ export const validateImportPayload = (payload: unknown): ExportPayload => {
     if (!Array.isArray(payload.data[table])) {
       throw new Error(`Missing ${table} table.`)
     }
+  }
+
+  if (!payload.data.medications.every(validateMedication)) {
+    throw new Error('Invalid medication records.')
+  }
+
+  if (!payload.data.doses.every(validateDose)) {
+    throw new Error('Invalid dose records.')
+  }
+
+  if (!payload.data.schedules.every(validateSchedule)) {
+    throw new Error('Invalid schedule records.')
+  }
+
+  if (!payload.data.settings.every(validateSettings)) {
+    throw new Error('Invalid settings records.')
   }
 
   return payload as ExportPayload
