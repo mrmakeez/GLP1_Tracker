@@ -117,8 +117,9 @@ export async function reconcileScheduledDoses(
         continue
       }
 
-      const occurrencePrefix = `${schedule.id}_`
-      const occurrenceLowerBound = `${schedule.id}_${new Date(occurrenceTime).toISOString()}`
+      const occurrenceLowerBound = `${schedule.id}_${new Date(
+        occurrenceTime,
+      ).toISOString()}`
       const occurrenceUpperBound = `${schedule.id}_\uffff`
       const existingKeys = new Set(
         (
