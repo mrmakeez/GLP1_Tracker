@@ -260,6 +260,9 @@ function ChartPage() {
   const [nowTime, setNowTime] = useState<number>(() => Date.now())
   const lastReconciledAtRef = useRef<number>(0)
   const reconcileInFlightRef = useRef(false)
+  const previousSchedulesRef = useRef<Map<string, ScheduleRecord>>(
+    new Map(),
+  )
 
   const timezone = settings?.defaultTimezone ?? DEFAULT_TIMEZONE
   const sampleMinutes = settings?.chartSampleMinutes ?? 60
@@ -372,11 +375,52 @@ function ChartPage() {
 
   useEffect(() => {
     if (schedules.length === 0) {
+      previousSchedulesRef.current = new Map()
       return
     }
+    const previousSchedules = previousSchedulesRef.current
+    const lastReconciledAt = lastReconciledAtRef.current
+    let requiresFullScan = false
+
+    for (const schedule of schedules) {
+      if (!schedule.enabled) {
+        continue
+      }
+      const startTime = new Date(schedule.startDatetimeIso).getTime()
+      if (Number.isNaN(startTime)) {
+        continue
+      }
+      const previous = previousSchedules.get(schedule.id)
+      if (!previous) {
+        if (startTime <= lastReconciledAt) {
+          requiresFullScan = true
+          break
+        }
+        continue
+      }
+      if (!previous.enabled && schedule.enabled) {
+        if (startTime <= lastReconciledAt) {
+          requiresFullScan = true
+          break
+        }
+      }
+      if (previous.startDatetimeIso !== schedule.startDatetimeIso) {
+        if (startTime <= lastReconciledAt) {
+          requiresFullScan = true
+          break
+        }
+      }
+    }
+
     const timeout = window.setTimeout(() => {
-      void reconcileAndRefreshDoses(Date.now(), { forceRefresh: true })
+      void reconcileAndRefreshDoses(Date.now(), {
+        forceRefresh: true,
+        sinceTime: requiresFullScan ? undefined : lastReconciledAt,
+      })
     }, 300)
+    previousSchedulesRef.current = new Map(
+      schedules.map((schedule) => [schedule.id, schedule]),
+    )
     return () => window.clearTimeout(timeout)
   }, [schedules, reconcileAndRefreshDoses])
 
