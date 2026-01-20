@@ -136,25 +136,48 @@ export async function reconcileScheduledDoses(
         continue
       }
 
-      const occurrenceLowerBound = `${schedule.id}_${new Date(
-        occurrenceTime,
-      ).toISOString()}`
-      const occurrenceUpperBound = `${schedule.id}_${new Date(
-        nowTime,
-      ).toISOString()}`
-      const existingKeys = new Set(
-        (
-          await db.doses
-            .where('occurrenceKey')
-            .between(occurrenceLowerBound, occurrenceUpperBound)
-            .toArray()
+      const buildDosesForOccurrences = async (
+        occurrences: Array<{ datetime: Date; occurrenceKey: string }>,
+      ) => {
+        if (occurrences.length === 0) {
+          return
+        }
+        const existingKeys = new Set(
+          (
+            await db.doses
+              .where('occurrenceKey')
+              .anyOf(occurrences.map((occurrence) => occurrence.occurrenceKey))
+              .toArray()
+          )
+            .map((record) => record.occurrenceKey)
+            .filter(
+              (occurrenceKey): occurrenceKey is string =>
+                typeof occurrenceKey === 'string',
+            ),
         )
-          .map((record) => record.occurrenceKey)
-          .filter(
-            (occurrenceKey): occurrenceKey is string =>
-              typeof occurrenceKey === 'string',
-          ),
-      )
+        for (const occurrence of occurrences) {
+          if (existingKeys.has(occurrence.occurrenceKey)) {
+            continue
+          }
+          const timestamp = new Date().toISOString()
+          dosesToCreate.push({
+            id: generateId(),
+            medicationId: schedule.medicationId,
+            doseMg: schedule.doseMg,
+            datetimeIso: occurrence.datetime.toISOString(),
+            timezone,
+            source: 'scheduled',
+            scheduleId: schedule.id,
+            occurrenceKey: occurrence.occurrenceKey,
+            status: 'assumed_taken',
+            createdAt: timestamp,
+            updatedAt: timestamp,
+          })
+        }
+        if (dosesToCreate.length >= bulkAddThreshold) {
+          await flushDoses()
+        }
+      }
 
       let occurrences: Array<{
         datetime: Date
@@ -165,28 +188,7 @@ export async function reconcileScheduledDoses(
         const occurrenceKey = `${schedule.id}_${occurrenceDatetime.toISOString()}`
         occurrences.push({ datetime: occurrenceDatetime, occurrenceKey })
         if (occurrences.length >= occurrenceBatchSize) {
-          for (const occurrence of occurrences) {
-            if (existingKeys.has(occurrence.occurrenceKey)) {
-              continue
-            }
-            const timestamp = new Date().toISOString()
-            dosesToCreate.push({
-              id: generateId(),
-              medicationId: schedule.medicationId,
-              doseMg: schedule.doseMg,
-              datetimeIso: occurrence.datetime.toISOString(),
-              timezone,
-              source: 'scheduled',
-              scheduleId: schedule.id,
-              occurrenceKey: occurrence.occurrenceKey,
-              status: 'assumed_taken',
-              createdAt: timestamp,
-              updatedAt: timestamp,
-            })
-          }
-          if (dosesToCreate.length >= bulkAddThreshold) {
-            await flushDoses()
-          }
+          await buildDosesForOccurrences(occurrences)
           occurrences = []
         }
         const nextOccurrence = addDaysInTimezone(
@@ -203,28 +205,7 @@ export async function reconcileScheduledDoses(
         occurrenceTime = nextOccurrence.getTime()
       }
 
-      for (const occurrence of occurrences) {
-        if (existingKeys.has(occurrence.occurrenceKey)) {
-          continue
-        }
-        const timestamp = new Date().toISOString()
-        dosesToCreate.push({
-          id: generateId(),
-          medicationId: schedule.medicationId,
-          doseMg: schedule.doseMg,
-          datetimeIso: occurrence.datetime.toISOString(),
-          timezone,
-          source: 'scheduled',
-          scheduleId: schedule.id,
-          occurrenceKey: occurrence.occurrenceKey,
-          status: 'assumed_taken',
-          createdAt: timestamp,
-          updatedAt: timestamp,
-        })
-      }
-      if (dosesToCreate.length >= bulkAddThreshold) {
-        await flushDoses()
-      }
+      await buildDosesForOccurrences(occurrences)
     }
 
     await flushDoses()

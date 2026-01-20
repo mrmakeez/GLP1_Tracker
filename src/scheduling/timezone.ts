@@ -133,3 +133,35 @@ export const addDaysInTimezone = (
   }
   return new Date(adjusted)
 }
+
+export const addMonthsInTimezone = (
+  date: Date,
+  months: number,
+  timezone: string,
+): Date | null => {
+  const parts = getDatePartsInZone(date, timezone)
+  if (!parts) {
+    return null
+  }
+  const utcGuess = Date.UTC(
+    parts.year,
+    parts.month - 1 + months,
+    parts.day,
+    parts.hour,
+    parts.minute,
+    parts.second,
+  )
+  const initialOffset = getTimezoneOffsetMinutes(
+    timezone,
+    new Date(utcGuess),
+  )
+  let adjusted = utcGuess - initialOffset * 60000
+  const adjustedOffset = getTimezoneOffsetMinutes(
+    timezone,
+    new Date(adjusted),
+  )
+  if (adjustedOffset !== initialOffset) {
+    adjusted = utcGuess - adjustedOffset * 60000
+  }
+  return new Date(adjusted)
+}

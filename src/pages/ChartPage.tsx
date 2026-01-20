@@ -30,12 +30,13 @@ import {
 } from '../db'
 import { reconcileScheduledDoses } from '../scheduling/reconcileScheduledDoses'
 import {
-  totalAmountAtTime,
+  amountFromDoseAtDeltaHours,
   type DoseEvent,
   type MedicationProfile,
 } from '../pk/bateman'
 import {
   addDaysInTimezone,
+  addMonthsInTimezone,
   getLocalDayIndex,
   resolveTimezone,
 } from '../scheduling/timezone'
@@ -143,6 +144,39 @@ const addDaysWithFallback = (
     return null
   }
   return addDaysInTimezone(date, days, fallbackTimezone)
+}
+
+const findFirstIndexAtOrAfter = (times: number[], target: number) => {
+  let left = 0
+  let right = times.length
+  while (left < right) {
+    const mid = Math.floor((left + right) / 2)
+    if (times[mid] < target) {
+      left = mid + 1
+    } else {
+      right = mid
+    }
+  }
+  return left
+}
+
+const buildMedicationAmounts = (
+  timeValues: number[],
+  dosesForMedication: DoseEvent[],
+) => {
+  const amounts = Array.from({ length: timeValues.length }, () => 0)
+  if (timeValues.length === 0) {
+    return amounts
+  }
+  for (const dose of dosesForMedication) {
+    const doseTime = dose.datetime.getTime()
+    const startIndex = findFirstIndexAtOrAfter(timeValues, doseTime)
+    for (let index = startIndex; index < timeValues.length; index += 1) {
+      const dtHours = (timeValues[index] - doseTime) / (60 * 60 * 1000)
+      amounts[index] += amountFromDoseAtDeltaHours(dose, dtHours)
+    }
+  }
+  return amounts
 }
 
 const buildFutureScheduleDoses = (
@@ -518,12 +552,20 @@ function ChartPage() {
 
   const range = useMemo(() => {
     const now = new Date(nowTime)
-    const start = addDays(now, -lookbackDays)
+    const start =
+      addDaysWithFallback(now, -lookbackDays, timezone, DEFAULT_TIMEZONE) ??
+      addDays(now, -lookbackDays)
     const end = activeFutureOption.months
-      ? addMonths(now, activeFutureOption.months)
-      : addDays(now, activeFutureOption.days ?? 0)
+      ? addMonthsInTimezone(now, activeFutureOption.months, timezone) ??
+        addMonths(now, activeFutureOption.months)
+      : addDaysWithFallback(
+          now,
+          activeFutureOption.days ?? 0,
+          timezone,
+          DEFAULT_TIMEZONE,
+        ) ?? addDays(now, activeFutureOption.days ?? 0)
     return { now, start, end }
-  }, [lookbackDays, activeFutureOption, nowTime])
+  }, [lookbackDays, activeFutureOption, nowTime, timezone])
 
   const doseEventsByMedication = useMemo(() => {
     const map = new Map<string, DoseEvent[]>()
@@ -585,6 +627,11 @@ function ChartPage() {
     return times.map((time) => new Date(time))
   }, [range.start, range.end, range.now, sampleMinutes])
 
+  const timeValues = useMemo(
+    () => timePoints.map((point) => point.getTime()),
+    [timePoints],
+  )
+
   const visibleMedications = useMemo(
     () =>
       medications.filter((medication) =>
@@ -595,7 +642,7 @@ function ChartPage() {
 
   const medicationAmounts = useMemo(() => {
     const map = new Map<string, number[]>()
-    if (timePoints.length === 0) {
+    if (timeValues.length === 0) {
       return map
     }
     for (const [medicationId, dosesForMedication] of doseEventsByMedication) {
@@ -604,11 +651,11 @@ function ChartPage() {
       }
       map.set(
         medicationId,
-        timePoints.map((t) => totalAmountAtTime(dosesForMedication, t)),
+        buildMedicationAmounts(timeValues, dosesForMedication),
       )
     }
     return map
-  }, [timePoints, doseEventsByMedication])
+  }, [timeValues, doseEventsByMedication])
 
   const totalAmounts = useMemo(() => {
     if (!showTotal || timePoints.length === 0) {
