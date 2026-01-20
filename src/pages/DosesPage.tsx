@@ -326,7 +326,7 @@ function DosesPage() {
             ...payload,
             source: 'manual',
             scheduleId: undefined,
-            occurrenceKey: undefined,
+            occurrenceKey: existingDose.occurrenceKey,
             status: undefined,
           })
           resetDoseForm()
