@@ -5,6 +5,7 @@ import {
   generateId,
   getSettings,
   listSchedules,
+  upsertSettings,
   type DoseRecord,
 } from '../db'
 import {
@@ -17,13 +18,12 @@ export type ReconcileResult = { createdCount: number }
 
 export async function reconcileScheduledDoses(
   now: Date,
-  options?: { since?: Date },
+  options?: { since?: Date | null },
 ): Promise<ReconcileResult> {
   const nowTime = now.getTime()
   if (Number.isNaN(nowTime)) {
     return { createdCount: 0 }
   }
-  const sinceTime = options?.since?.getTime()
 
   const [schedules, settings] = await Promise.all([
     listSchedules(),
@@ -33,6 +33,19 @@ export async function reconcileScheduledDoses(
   let createdCount = 0
   const occurrenceBatchSize = 250
   const bulkAddThreshold = 500
+
+  const lastReconciledAt = settings.lastReconciledAt
+  const lastReconciledTime =
+    typeof lastReconciledAt === 'string'
+      ? new Date(lastReconciledAt).getTime()
+      : undefined
+  const sinceTime =
+    options?.since === null
+      ? undefined
+      : options?.since?.getTime() ??
+        (lastReconciledTime != null && !Number.isNaN(lastReconciledTime)
+          ? lastReconciledTime
+          : undefined)
 
   await db.transaction('rw', db.doses, async () => {
     const dosesToCreate: DoseRecord[] = []
@@ -213,6 +226,8 @@ export async function reconcileScheduledDoses(
 
     await flushDoses()
   })
+
+  await upsertSettings({ lastReconciledAt: now.toISOString() })
 
   return { createdCount }
 }

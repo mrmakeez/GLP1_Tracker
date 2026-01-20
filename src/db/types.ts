@@ -48,6 +48,7 @@ export type SettingsRecord = {
   chartSampleMinutes: number
   defaultLookbackDays: number
   defaultFutureDays: number
+  lastReconciledAt?: string
 }
 
 export type ExportPayload = {
