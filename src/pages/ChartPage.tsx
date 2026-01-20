@@ -168,7 +168,8 @@ const buildMedicationAmounts = (
   if (timeValues.length === 0) {
     return amounts
   }
-  const AMOUNT_EPSILON = 1e-6
+  const ABSOLUTE_EPSILON = 1e-6
+  const RELATIVE_EPSILON = 1e-4
   for (const dose of dosesForMedication) {
     const doseTime = dose.datetime.getTime()
     const startIndex = findFirstIndexAtOrAfter(timeValues, doseTime)
@@ -178,11 +179,16 @@ const buildMedicationAmounts = (
       Math.abs(kaMinusKe) < 1e-8
         ? 1 / kaPerHour
         : Math.log(kaPerHour / kePerHour) / kaMinusKe
+    const peakAmount = amountFromDoseAtDeltaHours(dose, tMaxHours)
+    const threshold = Math.max(
+      ABSOLUTE_EPSILON,
+      Math.abs(peakAmount) * RELATIVE_EPSILON,
+    )
     for (let index = startIndex; index < timeValues.length; index += 1) {
       const dtHours = (timeValues[index] - doseTime) / (60 * 60 * 1000)
       const amount = amountFromDoseAtDeltaHours(dose, dtHours)
       amounts[index] += amount
-      if (dtHours > tMaxHours && amount <= AMOUNT_EPSILON) {
+      if (dtHours > tMaxHours && amount <= threshold) {
         break
       }
     }
@@ -196,6 +202,7 @@ const buildFutureScheduleDoses = (
   now: Date,
   end: Date,
   defaultTimezone: string,
+  existingDoseTimes?: Set<string>,
 ) => {
   if (!schedule.enabled) {
     return []
@@ -259,11 +266,15 @@ const buildFutureScheduleDoses = (
 
   const events: DoseEvent[] = []
   while (nextDate.getTime() <= endTime) {
-    events.push({
-      datetime: new Date(nextDate.getTime()),
-      doseMg: schedule.doseMg,
-      medication,
-    })
+    const occurrenceDatetime = new Date(nextDate.getTime())
+    const occurrenceIso = occurrenceDatetime.toISOString()
+    if (!existingDoseTimes?.has(occurrenceIso)) {
+      events.push({
+        datetime: occurrenceDatetime,
+        doseMg: schedule.doseMg,
+        medication,
+      })
+    }
     const nextOccurrence = addDaysWithFallback(
       nextDate,
       intervalDays,
@@ -580,6 +591,7 @@ function ChartPage() {
 
   const doseEventsByMedication = useMemo(() => {
     const map = new Map<string, DoseEvent[]>()
+    const existingDoseTimesByMedication = new Map<string, Set<string>>()
     for (const dose of doses) {
       if (dose.source === 'scheduled' && dose.status === 'skipped') {
         continue
@@ -588,6 +600,11 @@ function ChartPage() {
       if (!medication) {
         continue
       }
+      const existingTimes =
+        existingDoseTimesByMedication.get(dose.medicationId) ??
+        new Set<string>()
+      existingTimes.add(dose.datetimeIso)
+      existingDoseTimesByMedication.set(dose.medicationId, existingTimes)
       const list = map.get(dose.medicationId) ?? []
       list.push(
         toDoseEvent(dose, {
@@ -604,6 +621,8 @@ function ChartPage() {
       if (!medication) {
         continue
       }
+      const existingDoseTimes =
+        existingDoseTimesByMedication.get(schedule.medicationId)
       const futureDoses = buildFutureScheduleDoses(
         schedule,
         {
@@ -614,6 +633,7 @@ function ChartPage() {
         range.now,
         range.end,
         timezone,
+        existingDoseTimes,
       )
       if (futureDoses.length === 0) {
         continue
