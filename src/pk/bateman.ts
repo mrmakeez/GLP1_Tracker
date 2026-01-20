@@ -18,9 +18,10 @@ const toHours = (ms: number) => ms / HOURS_IN_MS
 const clampNonNegative = (value: number) =>
   value < 0 || Number.isNaN(value) ? 0 : value
 
-export const amountFromDoseAtTime = (dose: DoseEvent, t: Date): number => {
-  const dtHours = toHours(t.getTime() - dose.datetime.getTime())
-
+const amountFromDoseWithDeltaHours = (
+  dose: DoseEvent,
+  dtHours: number,
+): number => {
   if (dtHours < 0) {
     return 0
   }
@@ -42,6 +43,18 @@ export const amountFromDoseAtTime = (dose: DoseEvent, t: Date): number => {
     (Math.exp(-kePerHour * dtHours) - Math.exp(-kaPerHour * dtHours))
 
   return clampNonNegative(amount)
+}
+
+export const amountFromDoseAtTime = (dose: DoseEvent, t: Date): number => {
+  const dtHours = toHours(t.getTime() - dose.datetime.getTime())
+  return amountFromDoseWithDeltaHours(dose, dtHours)
+}
+
+export const amountFromDoseAtDeltaHours = (
+  dose: DoseEvent,
+  dtHours: number,
+): number => {
+  return amountFromDoseWithDeltaHours(dose, dtHours)
 }
 
 export const totalAmountAtTime = (doses: DoseEvent[], t: Date): number => {
