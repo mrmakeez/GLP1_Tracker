@@ -1,7 +1,15 @@
-import { useEffect, useMemo, useState } from 'react'
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import {
   LineChart,
   Line,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -27,6 +35,10 @@ import {
   type DoseEvent,
   type MedicationProfile,
 } from '../pk/bateman'
+import {
+  addDaysInTimezone,
+  getLocalDayIndex,
+} from '../scheduling/timezone'
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000
 
@@ -101,11 +113,28 @@ const toDoseEvent = (
   medication,
 })
 
+const addDaysWithFallback = (
+  date: Date,
+  days: number,
+  timezone: string,
+  fallbackTimezone: string,
+): Date | null => {
+  const stepped = addDaysInTimezone(date, days, timezone)
+  if (stepped) {
+    return stepped
+  }
+  if (timezone === fallbackTimezone) {
+    return null
+  }
+  return addDaysInTimezone(date, days, fallbackTimezone)
+}
+
 const buildFutureScheduleDoses = (
   schedule: ScheduleRecord,
   medication: MedicationProfile,
   now: Date,
   end: Date,
+  defaultTimezone: string,
 ) => {
   if (!schedule.enabled) {
     return []
@@ -119,31 +148,141 @@ const buildFutureScheduleDoses = (
     return []
   }
 
-  const intervalMs = intervalDays * DAY_IN_MS
+  const timezone = schedule.timezone || defaultTimezone
   const nowTime = now.getTime()
   const endTime = end.getTime()
-  let nextTime = start.getTime()
+  let nextDate = new Date(start.getTime())
 
-  if (nextTime < nowTime) {
-    const diff = nowTime - nextTime
-    const steps = Math.floor(diff / intervalMs)
-    nextTime += steps * intervalMs
-    if (nextTime < nowTime) {
-      nextTime += intervalMs
+  if (nextDate.getTime() < nowTime) {
+    let startDay = getLocalDayIndex(nextDate, timezone)
+    let nowDay = getLocalDayIndex(new Date(nowTime), timezone)
+    if (startDay == null || nowDay == null) {
+      startDay = getLocalDayIndex(nextDate, defaultTimezone)
+      nowDay = getLocalDayIndex(new Date(nowTime), defaultTimezone)
+    }
+    if (startDay == null || nowDay == null) {
+      return []
+    }
+    const diffDays = nowDay - startDay
+    const steps = Math.floor(diffDays / intervalDays)
+    const stepDays = steps * intervalDays
+    if (stepDays > 0) {
+      const stepped = addDaysWithFallback(
+        nextDate,
+        stepDays,
+        timezone,
+        defaultTimezone,
+      )
+      if (!stepped) {
+        return []
+      }
+      nextDate = stepped
     }
   }
 
+  while (nextDate.getTime() < nowTime) {
+    const advanced = addDaysWithFallback(
+      nextDate,
+      intervalDays,
+      timezone,
+      defaultTimezone,
+    )
+    if (!advanced || advanced.getTime() <= nextDate.getTime()) {
+      break
+    }
+    nextDate = advanced
+  }
+
   const events: DoseEvent[] = []
-  while (nextTime <= endTime) {
+  while (nextDate.getTime() <= endTime) {
     events.push({
-      datetime: new Date(nextTime),
+      datetime: new Date(nextDate.getTime()),
       doseMg: schedule.doseMg,
       medication,
     })
-    nextTime += intervalMs
+    const nextOccurrence = addDaysWithFallback(
+      nextDate,
+      intervalDays,
+      timezone,
+      defaultTimezone,
+    )
+    if (!nextOccurrence || nextOccurrence.getTime() <= nextDate.getTime()) {
+      break
+    }
+    nextDate = nextOccurrence
   }
 
   return events
+}
+
+const getNextScheduledOccurrenceTime = (
+  schedules: ScheduleRecord[],
+  sinceTime: number,
+  defaultTimezone: string,
+): number | null => {
+  let nextTime: number | null = null
+  for (const schedule of schedules) {
+    if (!schedule.enabled) {
+      continue
+    }
+    const startTime = new Date(schedule.startDatetimeIso).getTime()
+    if (Number.isNaN(startTime)) {
+      continue
+    }
+    const intervalDays = schedule.interval
+    if (!intervalDays || intervalDays <= 0) {
+      continue
+    }
+    const timezone = schedule.timezone || defaultTimezone
+    let candidateDate = new Date(startTime)
+    if (startTime < sinceTime) {
+      let startDay = getLocalDayIndex(candidateDate, timezone)
+      let sinceDay = getLocalDayIndex(new Date(sinceTime), timezone)
+      if (startDay == null || sinceDay == null) {
+        startDay = getLocalDayIndex(candidateDate, defaultTimezone)
+        sinceDay = getLocalDayIndex(new Date(sinceTime), defaultTimezone)
+      }
+      if (startDay == null || sinceDay == null) {
+        continue
+      }
+      const diffDays = sinceDay - startDay
+      const steps = Math.floor(diffDays / intervalDays)
+      const stepDays = steps * intervalDays
+      if (stepDays > 0) {
+        const stepped = addDaysWithFallback(
+          candidateDate,
+          stepDays,
+          timezone,
+          defaultTimezone,
+        )
+        if (!stepped) {
+          continue
+        }
+        candidateDate = stepped
+      }
+    }
+    while (candidateDate.getTime() <= sinceTime) {
+      const next = addDaysWithFallback(
+        candidateDate,
+        intervalDays,
+        timezone,
+        defaultTimezone,
+      )
+      if (!next) {
+        candidateDate = new Date(Number.NaN)
+        break
+      }
+      candidateDate = next
+    }
+    const candidateTime = candidateDate.getTime()
+    if (Number.isNaN(candidateTime)) {
+      continue
+    }
+    if (nextTime === null || candidateTime < nextTime) {
+      nextTime = candidateTime
+    }
+  }
+  return nextTime
 }
 
 const resolveFutureOption = (settings: SettingsRecord | null) => {
@@ -167,6 +306,12 @@ function ChartPage() {
   const [visibleMedicationIds, setVisibleMedicationIds] = useState<string[]>(
     [],
   )
+  const [nowTime, setNowTime] = useState<number>(() => Date.now())
+  const lastReconciledAtRef = useRef<number>(0)
+  const reconcileInFlightRef = useRef(false)
+  const previousSchedulesRef = useRef<Map<string, ScheduleRecord>>(
+    new Map(),
+  )
 
   const timezone = settings?.defaultTimezone ?? DEFAULT_TIMEZONE
   const sampleMinutes = settings?.chartSampleMinutes ?? 60
@@ -175,8 +320,39 @@ function ChartPage() {
     return new Map(medications.map((medication) => [medication.id, medication]))
   }, [medications])
 
+  const reconcileAndRefreshDoses = useCallback(
+    async (
+      targetTime: number,
+      options?: { forceRefresh?: boolean; sinceTime?: number },
+    ) => {
+    if (reconcileInFlightRef.current) {
+      return
+    }
+    if (targetTime <= lastReconciledAtRef.current) {
+      return
+    }
+    reconcileInFlightRef.current = true
+    try {
+      const result = await reconcileScheduledDoses(new Date(targetTime), {
+        since:
+          options?.sinceTime != null
+            ? new Date(options.sinceTime)
+            : undefined,
+      })
+      lastReconciledAtRef.current = targetTime
+      if (result.createdCount > 0 || options?.forceRefresh) {
+        const refreshedDoses = await listDoses()
+        setDoses(refreshedDoses)
+      }
+    } finally {
+      reconcileInFlightRef.current = false
+    }
+  }, [])
+
   const loadData = async () => {
-    await reconcileScheduledDoses(new Date())
+    const now = Date.now()
+    await reconcileScheduledDoses(new Date(now))
+    lastReconciledAtRef.current = now
     const [loadedMedications, loadedDoses, loadedSchedules, loadedSettings] =
       await Promise.all([
         listMedications(),
@@ -239,6 +415,92 @@ function ChartPage() {
     return () => window.clearTimeout(timer)
   }, [medications])
 
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      setNowTime(Date.now())
+    }, 60 * 1000)
+    return () => window.clearInterval(interval)
+  }, [])
+
+  useEffect(() => {
+    if (schedules.length === 0) {
+      previousSchedulesRef.current = new Map()
+      return
+    }
+    const previousSchedules = previousSchedulesRef.current
+    const lastReconciledAt = lastReconciledAtRef.current
+    let requiresFullScan = false
+
+    for (const schedule of schedules) {
+      if (!schedule.enabled) {
+        continue
+      }
+      const startTime = new Date(schedule.startDatetimeIso).getTime()
+      if (Number.isNaN(startTime)) {
+        continue
+      }
+      const previous = previousSchedules.get(schedule.id)
+      if (!previous) {
+        if (startTime <= lastReconciledAt) {
+          requiresFullScan = true
+          break
+        }
+        continue
+      }
+      if (!previous.enabled && schedule.enabled) {
+        if (startTime <= lastReconciledAt) {
+          requiresFullScan = true
+          break
+        }
+      }
+      if (previous.startDatetimeIso !== schedule.startDatetimeIso) {
+        if (startTime <= lastReconciledAt) {
+          requiresFullScan = true
+          break
+        }
+      }
+      if (previous.interval !== schedule.interval) {
+        if (startTime <= lastReconciledAt) {
+          requiresFullScan = true
+          break
+        }
+      }
+      if (previous.timezone !== schedule.timezone) {
+        if (startTime <= lastReconciledAt) {
+          requiresFullScan = true
+          break
+        }
+      }
+    }
+
+    const timeout = window.setTimeout(() => {
+      void reconcileAndRefreshDoses(Date.now(), {
+        forceRefresh: true,
+        sinceTime: requiresFullScan ? undefined : lastReconciledAt,
+      })
+    }, 300)
+    previousSchedulesRef.current = new Map(
+      schedules.map((schedule) => [schedule.id, schedule]),
+    )
+    return () => window.clearTimeout(timeout)
+  }, [schedules, reconcileAndRefreshDoses])
+
+  useEffect(() => {
+    const nextScheduledOccurrenceTime = getNextScheduledOccurrenceTime(
+      schedules,
+      lastReconciledAtRef.current,
+      timezone,
+    )
+    if (
+      nextScheduledOccurrenceTime !== null &&
+      nowTime >= nextScheduledOccurrenceTime
+    ) {
+      void reconcileAndRefreshDoses(nowTime, {
+        sinceTime: lastReconciledAtRef.current,
+      })
+    }
+  }, [nowTime, schedules, timezone, reconcileAndRefreshDoses])
+
   const activeFutureOption = useMemo(() => {
     return (
       FUTURE_OPTIONS.find((option) => option.value === futureOption) ??
@@ -247,13 +509,13 @@ function ChartPage() {
   }, [futureOption])
 
   const range = useMemo(() => {
-    const now = new Date()
+    const now = new Date(nowTime)
     const start = addDays(now, -lookbackDays)
     const end = activeFutureOption.months
       ? addMonths(now, activeFutureOption.months)
       : addDays(now, activeFutureOption.days ?? 0)
     return { now, start, end }
-  }, [lookbackDays, activeFutureOption])
+  }, [lookbackDays, activeFutureOption, nowTime])
 
   const doseEventsByMedication = useMemo(() => {
     const map = new Map<string, DoseEvent[]>()
@@ -287,6 +549,7 @@ function ChartPage() {
         },
         range.now,
         range.end,
+        timezone,
       )
       if (futureDoses.length === 0) {
         continue
@@ -297,31 +560,46 @@ function ChartPage() {
     }
 
     return map
-  }, [doses, schedules, medicationById, range.now, range.end])
+  }, [doses, schedules, medicationById, range.now, range.end, timezone])
 
   const timePoints = useMemo(() => {
-    return buildTimePoints(range.start, range.end, sampleMinutes)
-  }, [range.start, range.end, sampleMinutes])
+    const points = buildTimePoints(range.start, range.end, sampleMinutes)
+    if (points.length === 0) {
+      return points
+    }
+    const nowTime = range.now.getTime()
+    if (points.some((point) => point.getTime() === nowTime)) {
+      return points
+    }
+    const times = points.map((point) => point.getTime())
+    times.push(nowTime)
+    times.sort((a, b) => a - b)
+    return times.map((time) => new Date(time))
+  }, [range.start, range.end, range.now, sampleMinutes])
 
   const chartData = useMemo(() => {
     if (timePoints.length === 0) {
       return []
     }
 
+    const nowTime = range.now.getTime()
     return timePoints.map((t) => {
-      const point: Record<string, number> = { time: t.getTime() }
+      const point: Record<string, number | null> = { time: t.getTime() }
       let total = 0
+      const isPast = t.getTime() <= nowTime
       for (const medication of medications) {
         const dosesForMedication =
           doseEventsByMedication.get(medication.id) ?? []
         const amount = totalAmountAtTime(dosesForMedication, t)
-        point[medication.id] = amount
+        point[`${medication.id}_past`] = isPast ? amount : null
+        point[`${medication.id}_future`] = isPast ? null : amount
         total += amount
       }
-      point.total = total
+      point.total_past = isPast ? total : null
+      point.total_future = isPast ? null : total
       return point
     })
-  }, [timePoints, medications, doseEventsByMedication])
+  }, [timePoints, medications, doseEventsByMedication, range.now])
 
   const visibleMedications = medications.filter((medication) =>
     visibleMedicationIds.includes(medication.id),
@@ -454,8 +732,10 @@ function ChartPage() {
                     formatDateTime(new Date(Number(value)), timezone)
                   }
                   formatter={(value?: number) => {
-                    const amount = typeof value === 'number' ? value : 0
-                    return [amount.toFixed(2), 'mg']
+                    if (value == null || typeof value !== 'number') {
+                      return null
+                    }
+                    return [value.toFixed(2), 'mg']
                   }}
                   contentStyle={{
                     backgroundColor: '#0f172a',
@@ -463,27 +743,61 @@ function ChartPage() {
                   }}
                 />
                 <Legend />
+                <ReferenceLine
+                  x={range.now.getTime()}
+                  stroke="#94a3b8"
+                  strokeDasharray="4 4"
+                  label={{
+                    value: 'Now',
+                    position: 'insideTopRight',
+                    fill: '#94a3b8',
+                  }}
+                />
                 {showTotal ? (
-                  <Line
-                    type="monotone"
-                    dataKey="total"
-                    name="Total"
-                    stroke="#e2e8f0"
-                    strokeWidth={2.5}
-                    dot={false}
-                  />
+                  <>
+                    <Line
+                      type="monotone"
+                      dataKey="total_past"
+                      name="Total"
+                      stroke="#e2e8f0"
+                      strokeWidth={2.5}
+                      dot={false}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="total_future"
+                      stroke="#e2e8f0"
+                      strokeWidth={2.5}
+                      strokeDasharray="6 6"
+                      dot={false}
+                      legendType="none"
+                    />
+                  </>
                 ) : null}
-                {visibleMedications.map((medication, index) => (
-                  <Line
-                    key={medication.id}
-                    type="monotone"
-                    dataKey={medication.id}
-                    name={medication.name}
-                    stroke={COLORS[index % COLORS.length]}
-                    strokeWidth={2}
-                    dot={false}
-                  />
-                ))}
+                {visibleMedications.map((medication, index) => {
+                  const color = COLORS[index % COLORS.length]
+                  return (
+                    <Fragment key={medication.id}>
+                      <Line
+                        type="monotone"
+                        dataKey={`${medication.id}_past`}
+                        name={medication.name}
+                        stroke={color}
+                        strokeWidth={2}
+                        dot={false}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey={`${medication.id}_future`}
+                        stroke={color}
+                        strokeWidth={2}
+                        strokeDasharray="6 6"
+                        dot={false}
+                        legendType="none"
+                      />
+                    </Fragment>
+                  )
+                })}
               </LineChart>
             </ResponsiveContainer>
           )}
