@@ -6,103 +6,39 @@ import {
   listSchedules,
   type DoseRecord,
 } from '../db'
-
-type DateParts = {
-  year: number
-  month: number
-  day: number
-  hour: number
-  minute: number
-  second: number
-}
-
-const getDatePartsInZone = (
-  date: Date,
-  timezone: string,
-): DateParts | null => {
-  const formatter = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hourCycle: 'h23',
-  })
-  const parts = formatter.formatToParts(date)
-  const valueByType = new Map(
-    parts.map((part) => [part.type, part.value]),
-  )
-  const year = Number(valueByType.get('year'))
-  const month = Number(valueByType.get('month'))
-  const day = Number(valueByType.get('day'))
-  const hour = Number(valueByType.get('hour'))
-  const minute = Number(valueByType.get('minute'))
-  const second = Number(valueByType.get('second'))
-  if ([year, month, day, hour, minute, second].some(Number.isNaN)) {
-    return null
-  }
-  return { year, month, day, hour, minute, second }
-}
-
-const getTimezoneOffsetMinutes = (timezone: string, date: Date) => {
-  const parts = getDatePartsInZone(date, timezone)
-  if (!parts) {
-    return 0
-  }
-  const utcTime = Date.UTC(
-    parts.year,
-    parts.month - 1,
-    parts.day,
-    parts.hour,
-    parts.minute,
-    parts.second,
-  )
-  return (utcTime - date.getTime()) / 60000
-}
-
-const addDaysInTimezone = (
-  date: Date,
-  days: number,
-  timezone: string,
-): Date | null => {
-  const parts = getDatePartsInZone(date, timezone)
-  if (!parts) {
-    return null
-  }
-  const utcGuess = Date.UTC(
-    parts.year,
-    parts.month - 1,
-    parts.day + days,
-    parts.hour,
-    parts.minute,
-    parts.second,
-  )
-  const initialOffset = getTimezoneOffsetMinutes(
-    timezone,
-    new Date(utcGuess),
-  )
-  let adjusted = utcGuess - initialOffset * 60000
-  const adjustedOffset = getTimezoneOffsetMinutes(
-    timezone,
-    new Date(adjusted),
-  )
-  if (adjustedOffset !== initialOffset) {
-    adjusted = utcGuess - adjustedOffset * 60000
-  }
-  return new Date(adjusted)
-}
+import { addDaysInTimezone, getLocalDayIndex } from './timezone'
 
 export type ReconcileResult = { createdCount: number }
 
+const addDaysWithFallback = (
+  date: Date,
+  days: number,
+  timezone: string,
+  fallbackTimezone: string,
+): { date: Date; timezone: string } | null => {
+  const stepped = addDaysInTimezone(date, days, timezone)
+  if (stepped) {
+    return { date: stepped, timezone }
+  }
+  if (timezone === fallbackTimezone) {
+    return null
+  }
+  const fallbackStepped = addDaysInTimezone(date, days, fallbackTimezone)
+  if (!fallbackStepped) {
+    return null
+  }
+  return { date: fallbackStepped, timezone: fallbackTimezone }
+}
+
 export async function reconcileScheduledDoses(
   now: Date,
+  options?: { since?: Date },
 ): Promise<ReconcileResult> {
   const nowTime = now.getTime()
   if (Number.isNaN(nowTime)) {
     return { createdCount: 0 }
   }
+  const sinceTime = options?.since?.getTime()
 
   const [schedules, settings] = await Promise.all([
     listSchedules(),
@@ -130,7 +66,54 @@ export async function reconcileScheduledDoses(
       }
 
       const timezone = schedule.timezone || settings.defaultTimezone
+      let effectiveTimezone = timezone
       let occurrenceTime = start.getTime()
+
+      if (
+        sinceTime != null &&
+        !Number.isNaN(sinceTime) &&
+        sinceTime > occurrenceTime
+      ) {
+        let startDay = getLocalDayIndex(start, effectiveTimezone)
+        let sinceDay = getLocalDayIndex(new Date(sinceTime), effectiveTimezone)
+        if (startDay == null || sinceDay == null) {
+          effectiveTimezone = settings.defaultTimezone
+          startDay = getLocalDayIndex(start, effectiveTimezone)
+          sinceDay = getLocalDayIndex(new Date(sinceTime), effectiveTimezone)
+        }
+        if (startDay == null || sinceDay == null) {
+          continue
+        }
+        const diffDays = sinceDay - startDay
+        const steps = Math.floor(diffDays / intervalDays)
+        const stepDays = steps * intervalDays
+        if (stepDays > 0) {
+          const stepped = addDaysWithFallback(
+            start,
+            stepDays,
+            effectiveTimezone,
+            settings.defaultTimezone,
+          )
+          if (!stepped) {
+            continue
+          }
+          occurrenceTime = stepped.date.getTime()
+          effectiveTimezone = stepped.timezone
+        }
+        while (occurrenceTime < sinceTime) {
+          const nextOccurrence = addDaysWithFallback(
+            new Date(occurrenceTime),
+            intervalDays,
+            effectiveTimezone,
+            settings.defaultTimezone,
+          )
+          if (!nextOccurrence) {
+            break
+          }
+          occurrenceTime = nextOccurrence.date.getTime()
+          effectiveTimezone = nextOccurrence.timezone
+        }
+      }
 
       while (occurrenceTime <= nowTime) {
         const occurrenceDatetime = new Date(occurrenceTime)
@@ -147,7 +130,7 @@ export async function reconcileScheduledDoses(
             medicationId: schedule.medicationId,
             doseMg: schedule.doseMg,
             datetimeIso: occurrenceDatetime.toISOString(),
-            timezone,
+            timezone: effectiveTimezone,
             source: 'scheduled',
             scheduleId: schedule.id,
             occurrenceKey,
@@ -157,15 +140,17 @@ export async function reconcileScheduledDoses(
           })
         }
 
-        const nextOccurrence = addDaysInTimezone(
+        const nextOccurrence = addDaysWithFallback(
           occurrenceDatetime,
           intervalDays,
-          timezone,
+          effectiveTimezone,
+          settings.defaultTimezone,
         )
         if (!nextOccurrence) {
           break
         }
-        occurrenceTime = nextOccurrence.getTime()
+        occurrenceTime = nextOccurrence.date.getTime()
+        effectiveTimezone = nextOccurrence.timezone
       }
     }
 

@@ -1,4 +1,11 @@
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import {
   LineChart,
   Line,
@@ -28,6 +35,10 @@ import {
   type DoseEvent,
   type MedicationProfile,
 } from '../pk/bateman'
+import {
+  addDaysInTimezone,
+  getLocalDayIndex,
+} from '../scheduling/timezone'
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000
 
@@ -102,11 +113,32 @@ const toDoseEvent = (
   medication,
 })
 
+const addDaysWithFallback = (
+  date: Date,
+  days: number,
+  timezone: string,
+  fallbackTimezone: string,
+): { date: Date; timezone: string } | null => {
+  const stepped = addDaysInTimezone(date, days, timezone)
+  if (stepped) {
+    return { date: stepped, timezone }
+  }
+  if (timezone === fallbackTimezone) {
+    return null
+  }
+  const fallbackStepped = addDaysInTimezone(date, days, fallbackTimezone)
+  if (!fallbackStepped) {
+    return null
+  }
+  return { date: fallbackStepped, timezone: fallbackTimezone }
+}
+
 const buildFutureScheduleDoses = (
   schedule: ScheduleRecord,
   medication: MedicationProfile,
   now: Date,
   end: Date,
+  defaultTimezone: string,
 ) => {
   if (!schedule.enabled) {
     return []
@@ -120,31 +152,150 @@ const buildFutureScheduleDoses = (
     return []
   }
 
-  const intervalMs = intervalDays * DAY_IN_MS
+  const timezone = schedule.timezone || defaultTimezone
+  let effectiveTimezone = timezone
   const nowTime = now.getTime()
   const endTime = end.getTime()
-  let nextTime = start.getTime()
+  let nextDate = new Date(start.getTime())
 
-  if (nextTime < nowTime) {
-    const diff = nowTime - nextTime
-    const steps = Math.floor(diff / intervalMs)
-    nextTime += steps * intervalMs
-    if (nextTime < nowTime) {
-      nextTime += intervalMs
+  if (nextDate.getTime() < nowTime) {
+    let startDay = getLocalDayIndex(nextDate, effectiveTimezone)
+    let nowDay = getLocalDayIndex(new Date(nowTime), effectiveTimezone)
+    if (startDay == null || nowDay == null) {
+      effectiveTimezone = defaultTimezone
+      startDay = getLocalDayIndex(nextDate, effectiveTimezone)
+      nowDay = getLocalDayIndex(new Date(nowTime), effectiveTimezone)
+    }
+    if (startDay == null || nowDay == null) {
+      return []
+    }
+    const diffDays = nowDay - startDay
+    const steps = Math.floor(diffDays / intervalDays)
+    const stepDays = steps * intervalDays
+    if (stepDays > 0) {
+      const stepped = addDaysWithFallback(
+        nextDate,
+        stepDays,
+        effectiveTimezone,
+        defaultTimezone,
+      )
+      if (!stepped) {
+        return []
+      }
+      nextDate = stepped.date
+      effectiveTimezone = stepped.timezone
     }
   }
 
+  while (nextDate.getTime() < nowTime) {
+    const advanced = addDaysWithFallback(
+      nextDate,
+      intervalDays,
+      effectiveTimezone,
+      defaultTimezone,
+    )
+    if (!advanced || advanced.date.getTime() <= nextDate.getTime()) {
+      break
+    }
+    nextDate = advanced.date
+    effectiveTimezone = advanced.timezone
+  }
+
   const events: DoseEvent[] = []
-  while (nextTime <= endTime) {
+  while (nextDate.getTime() <= endTime) {
     events.push({
-      datetime: new Date(nextTime),
+      datetime: new Date(nextDate.getTime()),
       doseMg: schedule.doseMg,
       medication,
     })
-    nextTime += intervalMs
+    const nextOccurrence = addDaysWithFallback(
+      nextDate,
+      intervalDays,
+      effectiveTimezone,
+      defaultTimezone,
+    )
+    if (!nextOccurrence || nextOccurrence.date.getTime() <= nextDate.getTime()) {
+      break
+    }
+    nextDate = nextOccurrence.date
+    effectiveTimezone = nextOccurrence.timezone
   }
 
   return events
+}
+
+const getNextScheduledOccurrenceTime = (
+  schedules: ScheduleRecord[],
+  sinceTime: number,
+  defaultTimezone: string,
+): number | null => {
+  let nextTime: number | null = null
+  for (const schedule of schedules) {
+    if (!schedule.enabled) {
+      continue
+    }
+    const startTime = new Date(schedule.startDatetimeIso).getTime()
+    if (Number.isNaN(startTime)) {
+      continue
+    }
+    const intervalDays = schedule.interval
+    if (!intervalDays || intervalDays <= 0) {
+      continue
+    }
+    const timezone = schedule.timezone || defaultTimezone
+    let effectiveTimezone = timezone
+    let candidateDate = new Date(startTime)
+    if (startTime < sinceTime) {
+      let startDay = getLocalDayIndex(candidateDate, effectiveTimezone)
+      let sinceDay = getLocalDayIndex(new Date(sinceTime), effectiveTimezone)
+      if (startDay == null || sinceDay == null) {
+        effectiveTimezone = defaultTimezone
+        startDay = getLocalDayIndex(candidateDate, effectiveTimezone)
+        sinceDay = getLocalDayIndex(new Date(sinceTime), effectiveTimezone)
+      }
+      if (startDay == null || sinceDay == null) {
+        continue
+      }
+      const diffDays = sinceDay - startDay
+      const steps = Math.floor(diffDays / intervalDays)
+      const stepDays = steps * intervalDays
+      if (stepDays > 0) {
+        const stepped = addDaysWithFallback(
+          candidateDate,
+          stepDays,
+          effectiveTimezone,
+          defaultTimezone,
+        )
+        if (!stepped) {
+          continue
+        }
+        candidateDate = stepped.date
+        effectiveTimezone = stepped.timezone
+      }
+    }
+    while (candidateDate.getTime() <= sinceTime) {
+      const next = addDaysWithFallback(
+        candidateDate,
+        intervalDays,
+        effectiveTimezone,
+        defaultTimezone,
+      )
+      if (!next) {
+        candidateDate = new Date(Number.NaN)
+        break
+      }
+      candidateDate = next.date
+      effectiveTimezone = next.timezone
+    }
+    const candidateTime = candidateDate.getTime()
+    if (Number.isNaN(candidateTime)) {
+      continue
+    }
+    if (nextTime === null || candidateTime < nextTime) {
+      nextTime = candidateTime
+    }
+  }
+  return nextTime
 }
 
 const resolveFutureOption = (settings: SettingsRecord | null) => {
@@ -169,6 +320,11 @@ function ChartPage() {
     [],
   )
   const [nowTime, setNowTime] = useState<number>(() => Date.now())
+  const lastReconciledAtRef = useRef<number>(0)
+  const reconcileInFlightRef = useRef(false)
+  const previousSchedulesRef = useRef<Map<string, ScheduleRecord>>(
+    new Map(),
+  )
 
   const timezone = settings?.defaultTimezone ?? DEFAULT_TIMEZONE
   const sampleMinutes = settings?.chartSampleMinutes ?? 60
@@ -177,8 +333,39 @@ function ChartPage() {
     return new Map(medications.map((medication) => [medication.id, medication]))
   }, [medications])
 
+  const reconcileAndRefreshDoses = useCallback(
+    async (
+      targetTime: number,
+      options?: { forceRefresh?: boolean; sinceTime?: number },
+    ) => {
+    if (reconcileInFlightRef.current) {
+      return
+    }
+    if (targetTime <= lastReconciledAtRef.current) {
+      return
+    }
+    reconcileInFlightRef.current = true
+    try {
+      const result = await reconcileScheduledDoses(new Date(targetTime), {
+        since:
+          options?.sinceTime != null
+            ? new Date(options.sinceTime)
+            : undefined,
+      })
+      lastReconciledAtRef.current = targetTime
+      if (result.createdCount > 0 || options?.forceRefresh) {
+        const refreshedDoses = await listDoses()
+        setDoses(refreshedDoses)
+      }
+    } finally {
+      reconcileInFlightRef.current = false
+    }
+  }, [])
+
   const loadData = async () => {
-    await reconcileScheduledDoses(new Date())
+    const now = Date.now()
+    await reconcileScheduledDoses(new Date(now))
+    lastReconciledAtRef.current = now
     const [loadedMedications, loadedDoses, loadedSchedules, loadedSettings] =
       await Promise.all([
         listMedications(),
@@ -248,6 +435,85 @@ function ChartPage() {
     return () => window.clearInterval(interval)
   }, [])
 
+  useEffect(() => {
+    if (schedules.length === 0) {
+      previousSchedulesRef.current = new Map()
+      return
+    }
+    const previousSchedules = previousSchedulesRef.current
+    const lastReconciledAt = lastReconciledAtRef.current
+    let requiresFullScan = false
+
+    for (const schedule of schedules) {
+      if (!schedule.enabled) {
+        continue
+      }
+      const startTime = new Date(schedule.startDatetimeIso).getTime()
+      if (Number.isNaN(startTime)) {
+        continue
+      }
+      const previous = previousSchedules.get(schedule.id)
+      if (!previous) {
+        if (startTime <= lastReconciledAt) {
+          requiresFullScan = true
+          break
+        }
+        continue
+      }
+      if (!previous.enabled && schedule.enabled) {
+        if (startTime <= lastReconciledAt) {
+          requiresFullScan = true
+          break
+        }
+      }
+      if (previous.startDatetimeIso !== schedule.startDatetimeIso) {
+        if (startTime <= lastReconciledAt) {
+          requiresFullScan = true
+          break
+        }
+      }
+      if (previous.interval !== schedule.interval) {
+        if (startTime <= lastReconciledAt) {
+          requiresFullScan = true
+          break
+        }
+      }
+      if (previous.timezone !== schedule.timezone) {
+        if (startTime <= lastReconciledAt) {
+          requiresFullScan = true
+          break
+        }
+      }
+    }
+
+    const timeout = window.setTimeout(() => {
+      void reconcileAndRefreshDoses(Date.now(), {
+        forceRefresh: true,
+        sinceTime: requiresFullScan ? undefined : lastReconciledAt,
+      })
+    }, 300)
+    previousSchedulesRef.current = new Map(
+      schedules.map((schedule) => [schedule.id, schedule]),
+    )
+    return () => window.clearTimeout(timeout)
+  }, [schedules, reconcileAndRefreshDoses])
+
+  useEffect(() => {
+    const nextScheduledOccurrenceTime = getNextScheduledOccurrenceTime(
+      schedules,
+      lastReconciledAtRef.current,
+      timezone,
+    )
+    if (
+      nextScheduledOccurrenceTime !== null &&
+      nowTime >= nextScheduledOccurrenceTime
+    ) {
+      void reconcileAndRefreshDoses(nowTime, {
+        sinceTime: lastReconciledAtRef.current,
+      })
+    }
+  }, [nowTime, schedules, timezone, reconcileAndRefreshDoses])
+
   const activeFutureOption = useMemo(() => {
     return (
       FUTURE_OPTIONS.find((option) => option.value === futureOption) ??
@@ -296,6 +562,7 @@ function ChartPage() {
         },
         range.now,
         range.end,
+        timezone,
       )
       if (futureDoses.length === 0) {
         continue
@@ -306,7 +573,7 @@ function ChartPage() {
     }
 
     return map
-  }, [doses, schedules, medicationById, range.now, range.end])
+  }, [doses, schedules, medicationById, range.now, range.end, timezone])
 
   const timePoints = useMemo(() => {
     const points = buildTimePoints(range.start, range.end, sampleMinutes)
