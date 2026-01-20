@@ -139,8 +139,22 @@ export const updateSchedule = async (
   id: string,
   updates: Partial<Omit<ScheduleRecord, 'id' | 'createdAt'>>,
 ) => {
+  const existing = await db.schedules.get(id)
+  const shouldResetMaterializedAt =
+    !!existing &&
+    !('lastMaterializedAt' in updates) &&
+    ((typeof updates.startDatetimeIso === 'string' &&
+      updates.startDatetimeIso !== existing.startDatetimeIso) ||
+      (typeof updates.interval === 'number' &&
+        updates.interval !== existing.interval) ||
+      (typeof updates.timezone === 'string' &&
+        updates.timezone !== existing.timezone))
   const updatedAt = nowIso()
-  await db.schedules.update(id, { ...updates, updatedAt })
+  await db.schedules.update(id, {
+    ...updates,
+    ...(shouldResetMaterializedAt ? { lastMaterializedAt: null } : {}),
+    updatedAt,
+  })
 }
 
 export const deleteSchedule = (id: string) => db.schedules.delete(id)
