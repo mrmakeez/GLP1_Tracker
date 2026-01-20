@@ -38,6 +38,7 @@ export type ScheduleRecord = {
   frequency: ScheduleFrequency
   interval: number
   enabled: boolean
+  lastMaterializedAt?: string | null
   createdAt: string
   updatedAt: string
 }
@@ -61,5 +62,5 @@ export type ExportPayload = {
   }
 }
 
-export const DB_SCHEMA_VERSION = 3
+export const DB_SCHEMA_VERSION = 4
 export const DEFAULT_TIMEZONE = 'Pacific/Auckland'

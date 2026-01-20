@@ -47,8 +47,10 @@ export async function reconcileScheduledDoses(
 
   let createdCount = 0
 
-  await db.transaction('rw', db.doses, async () => {
+  await db.transaction('rw', db.doses, db.schedules, async () => {
     const dosesToCreate: DoseRecord[] = []
+    const scheduleUpdates: Array<{ id: string; lastMaterializedAt: string }> =
+      []
 
     for (const schedule of schedules) {
       if (!schedule.enabled) {
@@ -68,18 +70,34 @@ export async function reconcileScheduledDoses(
       const timezone = schedule.timezone || settings.defaultTimezone
       let effectiveTimezone = timezone
       let occurrenceTime = start.getTime()
+      const storedLastMaterializedAt = schedule.lastMaterializedAt
+        ? new Date(schedule.lastMaterializedAt).getTime()
+        : Number.NaN
+      const scheduleSinceTime =
+        !Number.isNaN(storedLastMaterializedAt) &&
+        storedLastMaterializedAt > occurrenceTime &&
+        storedLastMaterializedAt <= nowTime &&
+        (sinceTime == null || storedLastMaterializedAt > sinceTime)
+          ? storedLastMaterializedAt
+          : sinceTime
 
       if (
-        sinceTime != null &&
-        !Number.isNaN(sinceTime) &&
-        sinceTime > occurrenceTime
+        scheduleSinceTime != null &&
+        !Number.isNaN(scheduleSinceTime) &&
+        scheduleSinceTime > occurrenceTime
       ) {
         let startDay = getLocalDayIndex(start, effectiveTimezone)
-        let sinceDay = getLocalDayIndex(new Date(sinceTime), effectiveTimezone)
+        let sinceDay = getLocalDayIndex(
+          new Date(scheduleSinceTime),
+          effectiveTimezone,
+        )
         if (startDay == null || sinceDay == null) {
           effectiveTimezone = settings.defaultTimezone
           startDay = getLocalDayIndex(start, effectiveTimezone)
-          sinceDay = getLocalDayIndex(new Date(sinceTime), effectiveTimezone)
+          sinceDay = getLocalDayIndex(
+            new Date(scheduleSinceTime),
+            effectiveTimezone,
+          )
         }
         if (startDay == null || sinceDay == null) {
           continue
@@ -100,7 +118,7 @@ export async function reconcileScheduledDoses(
           occurrenceTime = stepped.date.getTime()
           effectiveTimezone = stepped.timezone
         }
-        while (occurrenceTime < sinceTime) {
+        while (occurrenceTime < scheduleSinceTime) {
           const nextOccurrence = addDaysWithFallback(
             new Date(occurrenceTime),
             intervalDays,
@@ -115,8 +133,11 @@ export async function reconcileScheduledDoses(
         }
       }
 
+      let lastOccurrenceTime: number | null = null
+
       while (occurrenceTime <= nowTime) {
         const occurrenceDatetime = new Date(occurrenceTime)
+        lastOccurrenceTime = occurrenceTime
         const occurrenceKey = `${schedule.id}_${occurrenceDatetime.toISOString()}`
         const existing = await db.doses
           .where('occurrenceKey')
@@ -152,6 +173,13 @@ export async function reconcileScheduledDoses(
         occurrenceTime = nextOccurrence.date.getTime()
         effectiveTimezone = nextOccurrence.timezone
       }
+
+      if (lastOccurrenceTime != null) {
+        scheduleUpdates.push({
+          id: schedule.id,
+          lastMaterializedAt: new Date(lastOccurrenceTime).toISOString(),
+        })
+      }
     }
 
     if (dosesToCreate.length > 0) {
@@ -166,6 +194,17 @@ export async function reconcileScheduledDoses(
           throw error
         }
       }
+    }
+
+    if (scheduleUpdates.length > 0) {
+      await Promise.all(
+        scheduleUpdates.map((update) =>
+          db.schedules.update(update.id, {
+            lastMaterializedAt: update.lastMaterializedAt,
+            updatedAt: new Date().toISOString(),
+          }),
+        ),
+      )
     }
   })
 

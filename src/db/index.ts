@@ -27,6 +27,14 @@ class Glp1Database extends Dexie {
       settings: 'id',
     })
 
+    this.version(3).stores({
+      medications: 'id, name, createdAt, updatedAt',
+      doses:
+        'id, medicationId, datetimeIso, &occurrenceKey, createdAt, updatedAt',
+      schedules: 'id, medicationId, startDatetimeIso, createdAt, updatedAt',
+      settings: 'id',
+    })
+
     this.version(DB_SCHEMA_VERSION).stores({
       medications: 'id, name, createdAt, updatedAt',
       doses:
@@ -118,6 +126,7 @@ export const addSchedule = async (
   const timestamp = nowIso()
   const record: ScheduleRecord = {
     ...input,
+    lastMaterializedAt: input.lastMaterializedAt ?? null,
     id: generateId(),
     createdAt: timestamp,
     updatedAt: timestamp,

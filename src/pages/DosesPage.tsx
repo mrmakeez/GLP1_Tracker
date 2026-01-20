@@ -376,7 +376,20 @@ function DosesPage() {
     }
 
     if (editingScheduleId) {
-      await updateSchedule(editingScheduleId, payload)
+      const existingSchedule = schedules.find(
+        (schedule) => schedule.id === editingScheduleId,
+      )
+      const shouldResetMaterializedAt =
+        !!existingSchedule &&
+        (existingSchedule.startDatetimeIso !== payload.startDatetimeIso ||
+          existingSchedule.interval !== payload.interval ||
+          existingSchedule.timezone !== payload.timezone)
+      await updateSchedule(editingScheduleId, {
+        ...payload,
+        ...(shouldResetMaterializedAt
+          ? { lastMaterializedAt: null }
+          : {}),
+      })
     } else {
       await addSchedule(payload)
     }
