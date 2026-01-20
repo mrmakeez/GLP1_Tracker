@@ -138,8 +138,12 @@ const buildFutureScheduleDoses = (
   let nextDate = new Date(start.getTime())
 
   if (nextDate.getTime() < nowTime) {
-    const startDay = getLocalDayIndex(nextDate, timezone)
-    const nowDay = getLocalDayIndex(new Date(nowTime), timezone)
+    let startDay = getLocalDayIndex(nextDate, timezone)
+    let nowDay = getLocalDayIndex(new Date(nowTime), timezone)
+    if (startDay == null || nowDay == null) {
+      startDay = getLocalDayIndex(nextDate, defaultTimezone)
+      nowDay = getLocalDayIndex(new Date(nowTime), defaultTimezone)
+    }
     if (startDay == null || nowDay == null) {
       return []
     }
@@ -201,8 +205,12 @@ const getNextScheduledOccurrenceTime = (
     const timezone = schedule.timezone || defaultTimezone
     let candidateDate = new Date(startTime)
     if (startTime < sinceTime) {
-      const startDay = getLocalDayIndex(candidateDate, timezone)
-      const sinceDay = getLocalDayIndex(new Date(sinceTime), timezone)
+      let startDay = getLocalDayIndex(candidateDate, timezone)
+      let sinceDay = getLocalDayIndex(new Date(sinceTime), timezone)
+      if (startDay == null || sinceDay == null) {
+        startDay = getLocalDayIndex(candidateDate, defaultTimezone)
+        sinceDay = getLocalDayIndex(new Date(sinceTime), defaultTimezone)
+      }
       if (startDay == null || sinceDay == null) {
         continue
       }
