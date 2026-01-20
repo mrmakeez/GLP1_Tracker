@@ -113,6 +113,22 @@ const toDoseEvent = (
   medication,
 })
 
+const addDaysWithFallback = (
+  date: Date,
+  days: number,
+  timezone: string,
+  fallbackTimezone: string,
+): Date | null => {
+  const stepped = addDaysInTimezone(date, days, timezone)
+  if (stepped) {
+    return stepped
+  }
+  if (timezone === fallbackTimezone) {
+    return null
+  }
+  return addDaysInTimezone(date, days, fallbackTimezone)
+}
+
 const buildFutureScheduleDoses = (
   schedule: ScheduleRecord,
   medication: MedicationProfile,
@@ -151,7 +167,12 @@ const buildFutureScheduleDoses = (
     const steps = Math.floor(diffDays / intervalDays)
     const stepDays = steps * intervalDays
     if (stepDays > 0) {
-      const stepped = addDaysInTimezone(nextDate, stepDays, timezone)
+      const stepped = addDaysWithFallback(
+        nextDate,
+        stepDays,
+        timezone,
+        defaultTimezone,
+      )
       if (!stepped) {
         return []
       }
@@ -160,7 +181,12 @@ const buildFutureScheduleDoses = (
   }
 
   while (nextDate.getTime() < nowTime) {
-    const advanced = addDaysInTimezone(nextDate, intervalDays, timezone)
+    const advanced = addDaysWithFallback(
+      nextDate,
+      intervalDays,
+      timezone,
+      defaultTimezone,
+    )
     if (!advanced || advanced.getTime() <= nextDate.getTime()) {
       break
     }
@@ -174,7 +200,12 @@ const buildFutureScheduleDoses = (
       doseMg: schedule.doseMg,
       medication,
     })
-    const nextOccurrence = addDaysInTimezone(nextDate, intervalDays, timezone)
+    const nextOccurrence = addDaysWithFallback(
+      nextDate,
+      intervalDays,
+      timezone,
+      defaultTimezone,
+    )
     if (!nextOccurrence || nextOccurrence.getTime() <= nextDate.getTime()) {
       break
     }
@@ -218,7 +249,12 @@ const getNextScheduledOccurrenceTime = (
       const steps = Math.floor(diffDays / intervalDays)
       const stepDays = steps * intervalDays
       if (stepDays > 0) {
-        const stepped = addDaysInTimezone(candidateDate, stepDays, timezone)
+        const stepped = addDaysWithFallback(
+          candidateDate,
+          stepDays,
+          timezone,
+          defaultTimezone,
+        )
         if (!stepped) {
           continue
         }
@@ -226,7 +262,12 @@ const getNextScheduledOccurrenceTime = (
       }
     }
     while (candidateDate.getTime() <= sinceTime) {
-      const next = addDaysInTimezone(candidateDate, intervalDays, timezone)
+      const next = addDaysWithFallback(
+        candidateDate,
+        intervalDays,
+        timezone,
+        defaultTimezone,
+      )
       if (!next) {
         candidateDate = new Date(Number.NaN)
         break
