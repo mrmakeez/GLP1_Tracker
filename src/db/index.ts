@@ -98,7 +98,7 @@ const dedupeDosesByOccurrenceKey = async (tx: Transaction) => {
   const grouped = new Map<string, DoseRecord[]>()
 
   for (const dose of doses) {
-    if (!dose.occurrenceKey) {
+    if (dose.occurrenceKey === undefined) {
       continue
     }
     const existing = grouped.get(dose.occurrenceKey)
