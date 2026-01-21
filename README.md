@@ -146,6 +146,9 @@ Notes:
   `https://<user>.github.io/<repo>/`.
 - If you set `VITE_BASE_PATH` manually, include the repository path (trailing slash optional).
 - If you rename the repository, update the Pages URL and allow the workflow to re-run.
+- GitHub Pages does not provide SPA fallback routes, so a `public/404.html` shim stores the
+  requested path in `sessionStorage` and redirects to the app root. On startup the app
+  restores the original path so direct links and refreshes work under `/<repo>/`.
 
 ---
 

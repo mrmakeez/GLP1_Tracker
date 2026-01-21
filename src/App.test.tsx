@@ -22,4 +22,31 @@ describe('App', () => {
       screen.getByRole('heading', { name: 'Doses' }),
     ).toBeInTheDocument()
   })
+
+  it('renders routes correctly when mounted under the GitHub Pages base path', () => {
+    render(
+      <MemoryRouter
+        basename="/GLP1_Tracker/"
+        initialEntries={['/GLP1_Tracker/chart']}
+      >
+        <App />
+      </MemoryRouter>,
+    )
+
+    expect(
+      screen.getByRole('heading', { name: 'Chart' }),
+    ).toBeInTheDocument()
+  })
+
+  it('fails to resolve GitHub Pages routes without a basename', () => {
+    render(
+      <MemoryRouter initialEntries={['/GLP1_Tracker/chart']}>
+        <App />
+      </MemoryRouter>,
+    )
+
+    expect(
+      screen.getByRole('heading', { name: 'Page not found' }),
+    ).toBeInTheDocument()
+  })
 })
