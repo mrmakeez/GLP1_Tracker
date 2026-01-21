@@ -6,11 +6,12 @@
     <title>GLP-1 Level Tracker</title>
     <script>
       ;(function () {
-        var base = '/GLP1_Tracker/'
+        // This fallback targets GitHub Pages project sites where the first path segment is the repo name.
+        var pathname = window.location.pathname
+        var segments = pathname.split('/').filter(Boolean)
+        var base = segments.length ? '/' + segments[0] + '/' : '/'
         var redirectPath =
-          window.location.pathname +
-          window.location.search +
-          window.location.hash
+          pathname + window.location.search + window.location.hash
         window.sessionStorage.setItem('gh-pages-redirect', redirectPath)
         window.location.replace(base)
       })()
