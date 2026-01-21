@@ -24,11 +24,15 @@ describe('App', () => {
   })
 
   it('renders routes correctly when mounted under the GitHub Pages base path', () => {
+    // When a basename is provided, initial entries should be relative to that base.
+    const ghPagesBasename = '/GLP1_Tracker/'
+    const relativeEntries = ['/chart']
+    const initialEntries = relativeEntries.map(
+      (entry) => `${ghPagesBasename.replace(/\/$/, '')}${entry}`,
+    )
+
     render(
-      <MemoryRouter
-        basename="/GLP1_Tracker/"
-        initialEntries={['/GLP1_Tracker/chart']}
-      >
+      <MemoryRouter basename={ghPagesBasename} initialEntries={initialEntries}>
         <App />
       </MemoryRouter>,
     )
