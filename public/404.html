@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GLP-1 Level Tracker</title>
+    <script>
+      ;(function () {
+        var base = '/GLP1_Tracker/'
+        var redirectPath =
+          window.location.pathname +
+          window.location.search +
+          window.location.hash
+        window.sessionStorage.setItem('gh-pages-redirect', redirectPath)
+        window.location.replace(base)
+      })()
+    </script>
+  </head>
+  <body></body>
+</html>
