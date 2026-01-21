@@ -32,6 +32,20 @@ const seedLegacyDb = async (name: string, doses: DoseRecord[]) => {
   await legacyDb.close()
 }
 
+const seedLegacyDbV3Unique = async (name: string, doses: DoseRecord[]) => {
+  const legacyDb = new Dexie(name)
+  legacyDb.version(3).stores({
+    medications: 'id, name, createdAt, updatedAt',
+    doses:
+      'id, medicationId, datetimeIso, &occurrenceKey, createdAt, updatedAt',
+    schedules: 'id, medicationId, startDatetimeIso, createdAt, updatedAt',
+    settings: 'id',
+  })
+  await legacyDb.open()
+  await legacyDb.table<DoseRecord, string>('doses').bulkAdd(doses)
+  await legacyDb.close()
+}
+
 const createDbName = (suffix: string) =>
   `glp1-migration-${suffix}-${Math.random().toString(16).slice(2)}`
 
@@ -96,6 +110,22 @@ describe('Dexie migration dedupe', () => {
 
     expect(remaining).toHaveLength(1)
     expect(remaining[0]?.id).toBe('newer')
+
+    await db.delete()
+  })
+
+  it('upgrades from legacy v3 unique schema without error', async () => {
+    const dbName = createDbName('legacy-v3')
+    await seedLegacyDbV3Unique(dbName, [
+      buildDose({
+        id: 'legacy',
+        occurrenceKey: 'schedule-legacy_2025-04-01T00:00:00.000Z',
+      }),
+    ])
+
+    const db = createDatabase(dbName)
+    await expect(db.open()).resolves.toBeDefined()
+    await expect(db.doses.count()).resolves.toBe(1)
 
     await db.delete()
   })
