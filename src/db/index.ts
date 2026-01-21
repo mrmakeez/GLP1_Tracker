@@ -1,4 +1,4 @@
-import Dexie, { type Table } from 'dexie'
+import Dexie, { type Table, type Transaction } from 'dexie'
 import type {
   DoseRecord,
   DoseSource,
@@ -18,8 +18,8 @@ class Glp1Database extends Dexie {
   schedules!: Table<ScheduleRecord, string>
   settings!: Table<SettingsRecord, string>
 
-  constructor() {
-    super('glp1-tracker')
+  constructor(name = 'glp1-tracker') {
+    super(name)
 
     this.version(2).stores({
       medications: 'id, name, createdAt, updatedAt',
@@ -27,6 +27,25 @@ class Glp1Database extends Dexie {
       schedules: 'id, medicationId, startDatetimeIso, createdAt, updatedAt',
       settings: 'id',
     })
+
+    this.version(3).stores({
+      medications: 'id, name, createdAt, updatedAt',
+      doses: 'id, medicationId, datetimeIso, occurrenceKey, createdAt, updatedAt',
+      schedules: 'id, medicationId, startDatetimeIso, createdAt, updatedAt',
+      settings: 'id',
+    })
+
+    this.version(4)
+      .stores({
+        medications: 'id, name, createdAt, updatedAt',
+        doses:
+          'id, medicationId, datetimeIso, occurrenceKey, createdAt, updatedAt',
+        schedules: 'id, medicationId, startDatetimeIso, createdAt, updatedAt',
+        settings: 'id',
+      })
+      .upgrade(async (tx) => {
+        await dedupeDosesByOccurrenceKey(tx)
+      })
 
     this.version(DB_SCHEMA_VERSION).stores({
       medications: 'id, name, createdAt, updatedAt',
@@ -38,7 +57,87 @@ class Glp1Database extends Dexie {
   }
 }
 
-export const db = new Glp1Database()
+const getStatusRank = (status?: ScheduledDoseStatus) => {
+  switch (status) {
+    case 'confirmed_taken':
+      return 3
+    case 'skipped':
+      return 2
+    case 'assumed_taken':
+      return 1
+    default:
+      return 0
+  }
+}
+
+const getSortTimestamp = (dose: DoseRecord) => {
+  if (dose.createdAt) {
+    return dose.createdAt
+  }
+  return dose.datetimeIso
+}
+
+const pickPreferredDose = (a: DoseRecord, b: DoseRecord) => {
+  const statusRankDiff = getStatusRank(b.status) - getStatusRank(a.status)
+  if (statusRankDiff !== 0) {
+    return statusRankDiff > 0 ? b : a
+  }
+
+  const dateA = getSortTimestamp(a)
+  const dateB = getSortTimestamp(b)
+  if (dateA !== dateB) {
+    return dateB > dateA ? b : a
+  }
+
+  return b.id > a.id ? b : a
+}
+
+const dedupeDosesByOccurrenceKey = async (tx: Transaction) => {
+  const dosesTable = tx.table<DoseRecord, string>('doses')
+  const doses = await dosesTable.toArray()
+  const grouped = new Map<string, DoseRecord[]>()
+
+  for (const dose of doses) {
+    if (!dose.occurrenceKey) {
+      continue
+    }
+    const existing = grouped.get(dose.occurrenceKey)
+    if (existing) {
+      existing.push(dose)
+    } else {
+      grouped.set(dose.occurrenceKey, [dose])
+    }
+  }
+
+  const idsToDelete: string[] = []
+
+  for (const entries of grouped.values()) {
+    if (entries.length < 2) {
+      continue
+    }
+
+    // Dedupe rule: prefer confirmed/explicit scheduled doses over assumed ones,
+    // then prefer the newest createdAt (or datetimeIso), then fall back to id.
+    let keep = entries[0]
+    for (const candidate of entries.slice(1)) {
+      keep = pickPreferredDose(keep, candidate)
+    }
+
+    for (const entry of entries) {
+      if (entry.id !== keep.id) {
+        idsToDelete.push(entry.id)
+      }
+    }
+  }
+
+  if (idsToDelete.length > 0) {
+    await dosesTable.bulkDelete(idsToDelete)
+  }
+}
+
+export const createDatabase = (name?: string) => new Glp1Database(name)
+
+export const db = createDatabase()
 
 const nowIso = () => new Date().toISOString()
 

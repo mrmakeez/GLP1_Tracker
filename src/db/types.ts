@@ -62,5 +62,5 @@ export type ExportPayload = {
   }
 }
 
-export const DB_SCHEMA_VERSION = 3
+export const DB_SCHEMA_VERSION = 5
 export const DEFAULT_TIMEZONE = 'Pacific/Auckland'

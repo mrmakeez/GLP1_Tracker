@@ -130,7 +130,9 @@ Stability:
 
 ### Local database
 - IndexedDB via Dexie
-- Versioned schema (currently v3)
+- Versioned schema (currently v5).
+- v5 upgrade deduplicates doses sharing the same `occurrenceKey` before adding a
+  unique index, keeping confirmed/explicit entries first, then newest.
 
 ### Export
 - Produces JSON: `{ schemaVersion, exportedAt, data: { ...tables } }`
