@@ -429,12 +429,18 @@ const normalizeDoseSource = (dose: DoseRecord): DoseRecord => {
     source === 'scheduled' && dose.status == null
       ? 'assumed_taken'
       : dose.status
+  const scheduleId = isNonEmptyString(dose.scheduleId)
+    ? dose.scheduleId
+    : undefined
+  const occurrenceKey = isNonEmptyString(dose.occurrenceKey)
+    ? dose.occurrenceKey
+    : undefined
   return {
     ...dose,
     source,
     status: source === 'scheduled' ? status : undefined,
-    scheduleId: source === 'scheduled' ? dose.scheduleId : undefined,
-    occurrenceKey: source === 'scheduled' ? dose.occurrenceKey : undefined,
+    scheduleId,
+    occurrenceKey,
   }
 }
 
