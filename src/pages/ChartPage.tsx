@@ -425,6 +425,11 @@ function ChartPage() {
         const refreshedDoses = await listDoses()
         setDoses(refreshedDoses)
       }
+    } catch (error) {
+      console.error(
+        'Failed to reconcile scheduled doses during chart refresh.',
+        error,
+      )
     } finally {
       reconcileInFlightRef.current = false
     }
