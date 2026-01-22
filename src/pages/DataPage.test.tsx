@@ -63,7 +63,9 @@ describe('DataPage', () => {
     expect(mockedExportDatabase).toHaveBeenCalledTimes(1)
 
     expect(createdAnchor).not.toBeNull()
-    expect(createdAnchor?.download).not.toContain(':')
+    const downloadName =
+      (createdAnchor as HTMLAnchorElement | null)?.download ?? ''
+    expect(downloadName).not.toContain(':')
 
     expect(revokeObjectURL).not.toHaveBeenCalled()
     act(() => {
