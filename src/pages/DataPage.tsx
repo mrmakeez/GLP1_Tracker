@@ -10,6 +10,13 @@ type ToastState = {
   tone: 'success' | 'error'
 }
 
+const buildExportFilename = (exportedAt: string) => {
+  const safeTimestamp = exportedAt
+    .replace(/[:.]/g, '-')
+    .replace('T', '_')
+  return `glp1-tracker-backup-${safeTimestamp}.json`
+}
+
 function DataPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [toast, setToast] = useState<ToastState | null>(null)
@@ -29,9 +36,11 @@ function DataPage() {
       const url = URL.createObjectURL(blob)
       const anchor = document.createElement('a')
       anchor.href = url
-      anchor.download = `glp1-tracker-backup-${payload.exportedAt}.json`
+      anchor.download = buildExportFilename(payload.exportedAt)
+      document.body.appendChild(anchor)
       anchor.click()
-      URL.revokeObjectURL(url)
+      anchor.remove()
+      window.setTimeout(() => URL.revokeObjectURL(url), 0)
       setToast({ message: 'Export ready for download.', tone: 'success' })
     } catch (error) {
       const message =
