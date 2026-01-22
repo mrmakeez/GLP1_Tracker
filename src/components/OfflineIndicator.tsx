@@ -2,13 +2,7 @@ import { useEffect, useState } from 'react'
 import { useRegisterSW } from 'virtual:pwa-register/react'
 
 function OfflineIndicator() {
-  const { offlineReady, needRefresh, updateServiceWorker } = useRegisterSW({
-    onRegistered(r?: ServiceWorkerRegistration) {
-      if (r) {
-        r.update()
-      }
-    },
-  })
+  const { offlineReady, needRefresh, updateServiceWorker } = useRegisterSW()
   const [showOfflineToast, setShowOfflineToast] = useState(false)
 
   useEffect(() => {
